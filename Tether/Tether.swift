@@ -118,7 +118,7 @@ public struct Peripheral: Sendable {
     }
 }
 
-public final class TetherCentral: Sendable {
+public actor TetherCentral: Sendable {
     let central: CBCentralManager
     let centralDelegate: Delegate
     let dispatchQueue: DispatchQueue
