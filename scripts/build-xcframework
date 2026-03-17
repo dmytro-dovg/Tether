@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+usage() {
+cat << EOF
+Usage: $0 <scheme> <build_configuration> [<output_directory>]
+    Build xcframework for a give scheme and build configuration.
+    Output directory defaults to working directory if not provided.
+EOF
+}
 
 archive() {
     local scheme=$1
@@ -22,7 +29,12 @@ archive() {
 build_xcframework() {
     local scheme=$1
     local config=$2
-    local output_dir=$3
+    local output_dir="${3:-.}"
+
+    if [[ -z "$scheme" || -z "$config" || -z "$output_dir" ]]; then
+        usage >&2
+        return 1
+    fi
 
     local mach_o_type="staticlib"
     local destinations=("generic/platform=iOS" "generic/platform=iOS Simulator" )
