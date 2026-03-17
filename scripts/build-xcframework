@@ -20,6 +20,7 @@ build_xcframework() {
     local mach_o_type="staticlib"
     local destinations=("generic/platform=iOS" "generic/platform=iOS Simulator")
     local framework_args=()
+    local framework_name
     [[ $config = "Debug" ]] && framework_name="${scheme}.debug" || framework_name="${scheme}.release"
     for destination in "${destinations[@]}"; do
         local platform="${destination#*=}"
@@ -35,7 +36,7 @@ build_xcframework() {
                    MACH_O_TYPE="${mach_o_type}" \
                    CODE_SIGNING_ALLOWED=NO
         if (( $? > 0)); then
-            printf "Failed to archive for $destination\n" >&2
+            printf "Failed to archive for %s\n" "${destination}" >&2
             return 1
         fi
         framework_args+=(-framework "${archive_path}/Products/Library/Frameworks/${scheme}.framework")
