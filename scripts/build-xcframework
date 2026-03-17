@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+archive() {
+    local scheme=$1
+    local config=$2
+    local mach_o_type=$3
+    local destination=$4
+    local output_dir=$5
+    local platform="${destination#*=}"
+
+    xcodebuild archive \
+               -scheme "${scheme}" \
+               -configuration "${config}" \
+               -destination "${destination}" \
+               -archivePath "${output_dir}/${framework_name}-${platform}.xcarchive" \
+               SKIP_INSTALL=NO \
+               BUILD_LIBRARY_FOR_DISTRIBUTION=YES\
+               MACH_O_TYPE="${mach_o_type}" \
+               CODE_SIGNING_ALLOWED=NO
+}
+
+build_xcframework() {
+    local scheme=$1
+    local config=$2
+    local output_dir=$3
+
+    local mach_o_type="staticlib"
+    local destinations=("generic/platform=iOS" "generic/platform=iOS Simulator" )
+    local framework_args=()
+    [[ $config = "Debug" ]] && framework_name="${scheme}.debug" || framework_name="${scheme}.release"
+    for destination in "${destinations[@]}"; do
+        archive "$scheme" "$config" "$mach_o_type" "$destination" "$output_dir"
+        if (( $? > 0)); then
+            printf "Failed to archive for iOS\n" >&2
+            exit 1
+        fi
+        framework_args+=(-framework "${output_dir}/${framework_name}-${destination#*=}.xcarchive/Products/Library/Frameworks/${scheme}.framework")
+    done
+    # Combine into xcframework
+    xcodebuild -create-xcframework \
+               "${framework_args[@]}" \
+               -output "${output_dir}/${framework_name}.xcframework"
+}
+
+build_xcframework "$@"
