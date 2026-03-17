@@ -7,6 +7,7 @@
 
 import Foundation
 @preconcurrency import CoreBluetooth
+import OSLog
 
 enum TetherError: Error {
     case alreadyScanning
@@ -33,10 +34,12 @@ actor Queue {
 }
 
 class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
+    var logger: Logger?
     weak var taskQueue: Queue?
     var onDiscover: (@Sendable (Peripheral) -> Void)?
 
-    init(taskQueue: Queue) {
+    init(taskQueue: Queue, logger: Logger? = nil) {
+        self.logger = logger
         self.taskQueue = taskQueue
     }
 
@@ -50,7 +53,7 @@ class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         Task {
-            print("++++ Success connect")
+            logger?.debug("Connected: \(peripheral.name ?? "Unknown peripheral")")
             await taskQueue?.popContinuation(for: peripheral.identifier)?.resume()
         }
     }
@@ -58,21 +61,21 @@ class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: (any Error)?) {
         Task {
             guard let error else {
-                print("++++ No error")
+                logger?.warning("Failed to connect: \(peripheral.name ?? "Unknown peripheral")\nNo Error")
                 return
             }
-            print("++++ Failure connect")
+            logger?.warning("Failed to connect: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
             await taskQueue?.popContinuation(for: peripheral.identifier)?.resume(throwing: error)
         }
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
         if let error {
-            print("++++ Disconnect due to a failure: \(error)")
+            logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
             return
         }
         Task {
-            print("++++ Success disconnect")
+            logger?.debug("Disconnected: \(peripheral.name ?? "Unknown peripheral")")
             await taskQueue?.popContinuation(for: peripheral.identifier)?.resume()
         }
 
@@ -80,11 +83,11 @@ class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, timestamp: CFAbsoluteTime, isReconnecting: Bool, error: (any Error)?) {
         if let error {
-            print("++++ Disconnect 2 due to a failure: \(error)")
+            logger?.warning("Disconnected(2) with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
             return
         }
         Task {
-            print("++++ Success disconnect 2")
+            logger?.debug("Disconnected(2): \(peripheral.name ?? "Unknown peripheral")")
             await taskQueue?.popContinuation(for: peripheral.identifier)?.resume()
         }
     }
@@ -104,6 +107,8 @@ public actor TetherCentral: Sendable {
     let dispatchQueue: DispatchQueue
     let taskQueue: Queue
 
+    let logger: Logger = .init(subsystem: "sh.dmytro.tether", category: "central")
+
     public var state: State {
         State.from(cbState: central.state)
     }
@@ -111,7 +116,7 @@ public actor TetherCentral: Sendable {
     public init() {
         self.dispatchQueue = DispatchQueue(label: "sh.dmytro.tether.queue")
         self.taskQueue = Queue()
-        self.centralDelegate = Delegate(taskQueue: self.taskQueue)
+        self.centralDelegate = Delegate(taskQueue: self.taskQueue, logger: self.logger)
         self.central = CBCentralManager(delegate: self.centralDelegate, queue: self.dispatchQueue)
     }
 
