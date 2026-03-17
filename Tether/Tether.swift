@@ -13,7 +13,7 @@ enum TetherError: Error {
     case alreadyScanning
     case alreadyConnected
     case nothingToDisconnect
-    case noError
+    case unknownError
 }
 
 actor Queue {
@@ -94,13 +94,17 @@ class CentralDelegateHandler: NSObject, CBCentralManagerDelegate, @unchecked Sen
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: (any Error)?) {
         Task {
-            let errorToThrow = error ?? TetherError.noError
+            let errorToThrow = error ?? TetherError.unknownError
             await taskQueue?.popConnectContinuation(for: peripheral.identifier)?.resume(throwing: errorToThrow)
             logger?.warning("Failed to connect: \(peripheral.name ?? "Unknown peripheral")\nError: \(errorToThrow.localizedDescription)")
         }
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
+        if let error {
+            logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
+            return
+        }
         Task {
             logger?.debug("Disconnected: \(peripheral.name ?? "Unknown peripheral")")
             await taskQueue?.popDisconnectContinuation(for: peripheral.identifier)?.resume()
@@ -182,7 +186,7 @@ public actor TetherCentral: Sendable {
     }
 
     public func disconnect(_ peripheral: Peripheral) async throws {
-        try await taskQueue.waitForConnect(to: peripheral.identifier) {
+        try await taskQueue.waitForDisconnect(to: peripheral.identifier) {
             self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
         }
     }
