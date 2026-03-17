@@ -145,7 +145,7 @@ public actor TetherCentral: Sendable {
     private let cbCentral: CBCentralManager
     private let cbCentralDelegate: CentralDelegateHandler
     private let taskQueue: Queue
-    private let logger: Logger = .init(subsystem: "sh.dmytro.tether", category: "central")
+    private let logger: Logger = .init(subsystem: "sh.dovgo.tether", category: "central")
     public var state: State {
         State.from(cbState: cbCentral.state)
     }
