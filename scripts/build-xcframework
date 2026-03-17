@@ -7,25 +7,6 @@ Usage: $0 <scheme> <build_configuration> [<output_directory>]
 EOF
 }
 
-archive() {
-    local scheme=$1
-    local config=$2
-    local mach_o_type=$3
-    local destination=$4
-    local output_dir=$5
-    local platform="${destination#*=}"
-
-    xcodebuild archive \
-               -scheme "${scheme}" \
-               -configuration "${config}" \
-               -destination "${destination}" \
-               -archivePath "${output_dir}/${framework_name}-${platform}.xcarchive" \
-               SKIP_INSTALL=NO \
-               BUILD_LIBRARY_FOR_DISTRIBUTION=YES\
-               MACH_O_TYPE="${mach_o_type}" \
-               CODE_SIGNING_ALLOWED=NO
-}
-
 build_xcframework() {
     local scheme=$1
     local config=$2
@@ -37,16 +18,27 @@ build_xcframework() {
     fi
 
     local mach_o_type="staticlib"
-    local destinations=("generic/platform=iOS" "generic/platform=iOS Simulator" )
+    local destinations=("generic/platform=iOS" "generic/platform=iOS Simulator")
     local framework_args=()
     [[ $config = "Debug" ]] && framework_name="${scheme}.debug" || framework_name="${scheme}.release"
     for destination in "${destinations[@]}"; do
-        archive "$scheme" "$config" "$mach_o_type" "$destination" "$output_dir"
+        local platform="${destination#*=}"
+        platform="${platform/ /_}"
+        local archive_path="${output_dir}/${framework_name}-${platform}.xcarchive"
+        xcodebuild archive \
+                   -scheme "${scheme}" \
+                   -configuration "${config}" \
+                   -destination "${destination}" \
+                   -archivePath "${archive_path}" \
+                   SKIP_INSTALL=NO \
+                   BUILD_LIBRARY_FOR_DISTRIBUTION=YES\
+                   MACH_O_TYPE="${mach_o_type}" \
+                   CODE_SIGNING_ALLOWED=NO
         if (( $? > 0)); then
-            printf "Failed to archive for iOS\n" >&2
-            exit 1
+            printf "Failed to archive for $destination\n" >&2
+            return 1
         fi
-        framework_args+=(-framework "${output_dir}/${framework_name}-${destination#*=}.xcarchive/Products/Library/Frameworks/${scheme}.framework")
+        framework_args+=(-framework "${archive_path}/Products/Library/Frameworks/${scheme}.framework")
     done
     # Combine into xcframework
     xcodebuild -create-xcframework \
