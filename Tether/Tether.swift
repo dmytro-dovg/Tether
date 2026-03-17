@@ -12,7 +12,7 @@ import OSLog
 enum TetherError: Error {
     case alreadyScanning
     case alreadyConnected
-    case nothingToDisconnect
+    case alreadyDisconnecting
     case unknownError
 }
 
@@ -53,7 +53,7 @@ actor Queue {
 
     func waitForDisconnect(to uuid: UUID, _ body: @Sendable () -> Void) async throws {
         guard disconnectContinuations[uuid] == nil else {
-            throw TetherError.nothingToDisconnect
+            throw TetherError.alreadyDisconnecting
         }
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -103,6 +103,7 @@ class CentralDelegateHandler: NSObject, CBCentralManagerDelegate, @unchecked Sen
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
         if let error {
             logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
+            Task { await taskQueue?.popDisconnectContinuation(for: peripheral.identifier)?.resume(throwing: error) }
             return
         }
         Task {
@@ -114,6 +115,7 @@ class CentralDelegateHandler: NSObject, CBCentralManagerDelegate, @unchecked Sen
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, timestamp: CFAbsoluteTime, isReconnecting: Bool, error: (any Error)?) {
         if let error {
             logger?.warning("Disconnected(2) with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
+            Task { await taskQueue?.popDisconnectContinuation(for: peripheral.identifier)?.resume(throwing: error) }
             return
         }
         Task {
