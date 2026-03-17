@@ -33,7 +33,7 @@ actor Queue {
     }
 }
 
-class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
+class CentralDelegateHandler: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
     var logger: Logger?
     weak var taskQueue: Queue?
     var onDiscover: (@Sendable (Peripheral) -> Void)?
@@ -95,31 +95,34 @@ class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
 
 public struct Peripheral: Sendable {
     let cbPeripheral: CBPeripheral
+    public var identifier: UUID { cbPeripheral.identifier }
+    public var name: String? { cbPeripheral.name }
+}
 
-    public var info: String {
-        "Name: \(cbPeripheral.name ?? "Unknown"), UUID: \(cbPeripheral.identifier.uuidString)"
+extension Peripheral: CustomDebugStringConvertible {
+    public var debugDescription: String {
+        "Name: \(name ?? "Unknown"), UUID: \(identifier.uuidString)"
     }
 }
 
 public actor TetherCentral: Sendable {
-    let central: CBCentralManager
-    let centralDelegate: Delegate
-    let dispatchQueue: DispatchQueue
-    let taskQueue: Queue
-
-    let logger: Logger = .init(subsystem: "sh.dmytro.tether", category: "central")
+    private let cbCentral: CBCentralManager
+    private let cbCentralDelegate: CentralDelegateHandler
+    private let taskQueue: Queue
+    private let logger: Logger = .init(subsystem: "sh.dmytro.tether", category: "central")
 
     public var state: State {
-        State.from(cbState: central.state)
+        State.from(cbState: cbCentral.state)
     }
 
     public init() {
-        self.dispatchQueue = DispatchQueue(label: "sh.dmytro.tether.queue")
         self.taskQueue = Queue()
-        self.centralDelegate = Delegate(taskQueue: self.taskQueue, logger: self.logger)
-        self.central = CBCentralManager(delegate: self.centralDelegate, queue: self.dispatchQueue)
+        self.cbCentralDelegate = CentralDelegateHandler(taskQueue: self.taskQueue, logger: self.logger)
+        self.cbCentral = CBCentralManager(delegate: self.cbCentralDelegate, queue: DispatchQueue.global())
     }
 
+
+    // MARK: - Scanning
     public func scanForPeripherals(withServices services: [UUID]) async throws -> AsyncStream<Peripheral> {
         guard await self.taskQueue.scanContinuation == nil else {
             throw TetherError.alreadyScanning
@@ -127,14 +130,14 @@ public actor TetherCentral: Sendable {
         let cbUuids: [CBUUID] = services.map { CBUUID(nsuuid: $0) }
         let (stream, continuation) =  AsyncStream.makeStream(of: Peripheral.self)
         await self.taskQueue.setScanContinuation(continuation)
-        self.centralDelegate.onDiscover = { @Sendable peripheral in
+        self.cbCentralDelegate.onDiscover = { @Sendable peripheral in
             continuation.yield(peripheral)
         }
         continuation.onTermination = { _ in
-            self.central.stopScan()
+            self.cbCentral.stopScan()
             Task { await self.taskQueue.setScanContinuation(nil) }
         }
-        self.central.scanForPeripherals(withServices: cbUuids)
+        self.cbCentral.scanForPeripherals(withServices: cbUuids)
         return stream
     }
 
@@ -142,11 +145,12 @@ public actor TetherCentral: Sendable {
         await self.taskQueue.scanContinuation?.finish()
     }
 
+    // MARK: - Connection
     public func connect(_ peripheral: Peripheral) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task {
                 try await taskQueue.addConnect(continuation: continuation, for: peripheral.cbPeripheral.identifier)
-                self.central.connect(peripheral.cbPeripheral, options: nil)
+                self.cbCentral.connect(peripheral.cbPeripheral, options: nil)
             }
         }
     }
@@ -155,7 +159,7 @@ public actor TetherCentral: Sendable {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task {
                 try await taskQueue.addConnect(continuation: continuation, for: peripheral.cbPeripheral.identifier)
-                self.central.cancelPeripheralConnection(peripheral.cbPeripheral)
+                self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
             }
         }
     }
