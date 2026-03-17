@@ -12,24 +12,58 @@ import OSLog
 enum TetherError: Error {
     case alreadyScanning
     case alreadyConnected
+    case nothingToDisconnect
+    case noError
 }
 
 actor Queue {
     var scanContinuation: AsyncStream<Peripheral>.Continuation? = nil
     var connectContinuations: [UUID: CheckedContinuation<Void, Error>] = [:]
-    func setScanContinuation(_ continuation: AsyncStream<Peripheral>.Continuation?) {
-        scanContinuation = continuation
+    var disconnectContinuations: [UUID: CheckedContinuation<Void, Error>] = [:]
+
+    var isScanning: Bool {
+        scanContinuation != nil
     }
 
-    func addConnect(continuation: CheckedContinuation<Void, Error>, for uuid: UUID) throws {
+    func startScan(_ body: @Sendable (AsyncStream<Peripheral>.Continuation) -> Void) async -> AsyncStream<Peripheral> {
+        return AsyncStream(Peripheral.self) { continuation in
+            scanContinuation = continuation
+            body(continuation)
+        }
+    }
+
+    func stopScan() {
+        scanContinuation = nil
+    }
+
+    func waitForConnect(to uuid: UUID, _ body: @Sendable () -> Void) async throws {
         guard connectContinuations[uuid] == nil else {
             throw TetherError.alreadyConnected
         }
-        connectContinuations[uuid] = continuation
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connectContinuations[uuid] = continuation
+            body()
+        }
     }
 
-    func popContinuation(for uuid: UUID) -> CheckedContinuation<Void, Error>? {
+    func popConnectContinuation(for uuid: UUID) -> CheckedContinuation<Void, Error>? {
         connectContinuations.removeValue(forKey: uuid)
+    }
+
+    func waitForDisconnect(to uuid: UUID, _ body: @Sendable () -> Void) async throws {
+        guard disconnectContinuations[uuid] == nil else {
+            throw TetherError.nothingToDisconnect
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            disconnectContinuations[uuid] = continuation
+            body()
+        }
+    }
+
+    func popDisconnectContinuation(for uuid: UUID) -> CheckedContinuation<Void, Error>? {
+        disconnectContinuations.removeValue(forKey: uuid)
     }
 }
 
@@ -54,31 +88,23 @@ class CentralDelegateHandler: NSObject, CBCentralManagerDelegate, @unchecked Sen
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         Task {
             logger?.debug("Connected: \(peripheral.name ?? "Unknown peripheral")")
-            await taskQueue?.popContinuation(for: peripheral.identifier)?.resume()
+            await taskQueue?.popConnectContinuation(for: peripheral.identifier)?.resume()
         }
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: (any Error)?) {
         Task {
-            guard let error else {
-                logger?.warning("Failed to connect: \(peripheral.name ?? "Unknown peripheral")\nNo Error")
-                return
-            }
-            logger?.warning("Failed to connect: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
-            await taskQueue?.popContinuation(for: peripheral.identifier)?.resume(throwing: error)
+            let errorToThrow = error ?? TetherError.noError
+            await taskQueue?.popConnectContinuation(for: peripheral.identifier)?.resume(throwing: errorToThrow)
+            logger?.warning("Failed to connect: \(peripheral.name ?? "Unknown peripheral")\nError: \(errorToThrow.localizedDescription)")
         }
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
-        if let error {
-            logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
-            return
-        }
         Task {
             logger?.debug("Disconnected: \(peripheral.name ?? "Unknown peripheral")")
-            await taskQueue?.popContinuation(for: peripheral.identifier)?.resume()
+            await taskQueue?.popDisconnectContinuation(for: peripheral.identifier)?.resume()
         }
-
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, timestamp: CFAbsoluteTime, isReconnecting: Bool, error: (any Error)?) {
@@ -88,7 +114,7 @@ class CentralDelegateHandler: NSObject, CBCentralManagerDelegate, @unchecked Sen
         }
         Task {
             logger?.debug("Disconnected(2): \(peripheral.name ?? "Unknown peripheral")")
-            await taskQueue?.popContinuation(for: peripheral.identifier)?.resume()
+            await taskQueue?.popDisconnectContinuation(for: peripheral.identifier)?.resume()
         }
     }
 }
@@ -110,9 +136,12 @@ public actor TetherCentral: Sendable {
     private let cbCentralDelegate: CentralDelegateHandler
     private let taskQueue: Queue
     private let logger: Logger = .init(subsystem: "sh.dmytro.tether", category: "central")
-
     public var state: State {
         State.from(cbState: cbCentral.state)
+    }
+
+    public func isScanning() async -> Bool {
+        await self.taskQueue.isScanning
     }
 
     public init() {
@@ -128,17 +157,17 @@ public actor TetherCentral: Sendable {
             throw TetherError.alreadyScanning
         }
         let cbUuids: [CBUUID] = services.map { CBUUID(nsuuid: $0) }
-        let (stream, continuation) =  AsyncStream.makeStream(of: Peripheral.self)
-        await self.taskQueue.setScanContinuation(continuation)
-        self.cbCentralDelegate.onDiscover = { @Sendable peripheral in
-            continuation.yield(peripheral)
+
+        return await self.taskQueue.startScan() { continuation in
+            self.cbCentralDelegate.onDiscover = { @Sendable peripheral in
+                continuation.yield(peripheral)
+            }
+            continuation.onTermination = { _ in
+                self.cbCentral.stopScan()
+                Task { await self.taskQueue.stopScan() }
+            }
+            self.cbCentral.scanForPeripherals(withServices: cbUuids)
         }
-        continuation.onTermination = { _ in
-            self.cbCentral.stopScan()
-            Task { await self.taskQueue.setScanContinuation(nil) }
-        }
-        self.cbCentral.scanForPeripherals(withServices: cbUuids)
-        return stream
     }
 
     public func stopScan() async {
@@ -147,20 +176,14 @@ public actor TetherCentral: Sendable {
 
     // MARK: - Connection
     public func connect(_ peripheral: Peripheral) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            Task {
-                try await taskQueue.addConnect(continuation: continuation, for: peripheral.cbPeripheral.identifier)
-                self.cbCentral.connect(peripheral.cbPeripheral, options: nil)
-            }
+        try await taskQueue.waitForConnect(to: peripheral.identifier) {
+            self.cbCentral.connect(peripheral.cbPeripheral, options: nil)
         }
     }
 
     public func disconnect(_ peripheral: Peripheral) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            Task {
-                try await taskQueue.addConnect(continuation: continuation, for: peripheral.cbPeripheral.identifier)
-                self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
-            }
+        try await taskQueue.waitForConnect(to: peripheral.identifier) {
+            self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
         }
     }
 }
