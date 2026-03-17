@@ -25,7 +25,10 @@ actor Queue {
         scanContinuation != nil
     }
 
-    func startScan(_ body: @Sendable (AsyncStream<Peripheral>.Continuation) -> Void) async -> AsyncStream<Peripheral> {
+    func startScan(_ body: @Sendable (AsyncStream<Peripheral>.Continuation) -> Void) async throws -> AsyncStream<Peripheral> {
+        guard scanContinuation == nil else {
+            throw TetherError.alreadyScanning
+        }
         return AsyncStream(Peripheral.self) { continuation in
             scanContinuation = continuation
             body(continuation)
@@ -70,7 +73,6 @@ actor Queue {
 class CentralDelegateHandler: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
     var logger: Logger?
     weak var taskQueue: Queue?
-    var onDiscover: (@Sendable (Peripheral) -> Void)?
 
     init(taskQueue: Queue, logger: Logger? = nil) {
         self.logger = logger
@@ -82,7 +84,9 @@ class CentralDelegateHandler: NSObject, CBCentralManagerDelegate, @unchecked Sen
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
-        onDiscover?(Peripheral(cbPeripheral: peripheral))
+        Task {
+            await taskQueue?.scanContinuation?.yield(Peripheral(cbPeripheral: peripheral))
+        }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -159,20 +163,12 @@ public actor TetherCentral: Sendable {
 
     // MARK: - Scanning
     public func scanForPeripherals(withServices services: [UUID]) async throws -> AsyncStream<Peripheral> {
-        guard await self.taskQueue.scanContinuation == nil else {
-            throw TetherError.alreadyScanning
-        }
-        let cbUuids: [CBUUID] = services.map { CBUUID(nsuuid: $0) }
-
-        return await self.taskQueue.startScan() { continuation in
-            self.cbCentralDelegate.onDiscover = { @Sendable peripheral in
-                continuation.yield(peripheral)
-            }
+        try await self.taskQueue.startScan() { continuation in
             continuation.onTermination = { _ in
                 self.cbCentral.stopScan()
                 Task { await self.taskQueue.stopScan() }
             }
-            self.cbCentral.scanForPeripherals(withServices: cbUuids)
+            self.cbCentral.scanForPeripherals(withServices: services.map { CBUUID(nsuuid: $0) })
         }
     }
 
