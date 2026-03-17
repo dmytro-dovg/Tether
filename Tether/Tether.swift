@@ -10,37 +10,25 @@ import Foundation
 
 enum TetherError: Error {
     case alreadyScanning
+    case alreadyConnected
 }
 
 actor Queue {
     var scanContinuation: AsyncStream<Peripheral>.Continuation? = nil
+    var connectContinuations: [UUID: CheckedContinuation<Void, Error>] = [:]
     func setScanContinuation(_ continuation: AsyncStream<Peripheral>.Continuation?) {
         scanContinuation = continuation
     }
-    actor ConnectTask {
-        let peripheral: Peripheral
-        let completion: @Sendable (Result<Void, Error>) -> Void
 
-
-        init(peripheral: Peripheral, completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
-            self.peripheral = peripheral
-            self.completion = completion
+    func addConnect(continuation: CheckedContinuation<Void, Error>, for uuid: UUID) throws {
+        guard connectContinuations[uuid] == nil else {
+            throw TetherError.alreadyConnected
         }
+        connectContinuations[uuid] = continuation
     }
 
-    var connectTasks: [ConnectTask] = []
-
-    func startConnectTask(peripheral: Peripheral, _ body: @escaping @Sendable (Result<Void, Error>) -> Void) -> ConnectTask {
-        let task = ConnectTask(peripheral: peripheral, completion: body)
-        self.connectTasks.append(task)
-        return task
-    }
-    
-    func takeConnectTask(for identifier: UUID) -> ConnectTask? {
-        if let index = connectTasks.firstIndex(where: { $0.peripheral.cbPeripheral.identifier == identifier }) {
-            return connectTasks.remove(at: index)
-        }
-        return nil
+    func popContinuation(for uuid: UUID) -> CheckedContinuation<Void, Error>? {
+        connectContinuations.removeValue(forKey: uuid)
     }
 }
 
@@ -63,9 +51,7 @@ class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         Task {
             print("++++ Success connect")
-            if let task = await taskQueue?.takeConnectTask(for: peripheral.identifier) {
-                task.completion(.success(()))
-            }
+            await taskQueue?.popContinuation(for: peripheral.identifier)?.resume()
         }
     }
 
@@ -76,9 +62,7 @@ class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
                 return
             }
             print("++++ Failure connect")
-            if let task = await taskQueue?.takeConnectTask(for: peripheral.identifier) {
-                task.completion(.failure(error))
-            }
+            await taskQueue?.popContinuation(for: peripheral.identifier)?.resume(throwing: error)
         }
     }
 
@@ -89,9 +73,7 @@ class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
         }
         Task {
             print("++++ Success disconnect")
-            if let task = await taskQueue?.takeConnectTask(for: peripheral.identifier) {
-                task.completion(.success(()))
-            }
+            await taskQueue?.popContinuation(for: peripheral.identifier)?.resume()
         }
 
     }
@@ -103,9 +85,7 @@ class Delegate: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
         }
         Task {
             print("++++ Success disconnect 2")
-            if let task = await taskQueue?.takeConnectTask(for: peripheral.identifier) {
-                task.completion(.success(()))
-            }
+            await taskQueue?.popContinuation(for: peripheral.identifier)?.resume()
         }
     }
 }
@@ -160,32 +140,18 @@ public actor TetherCentral: Sendable {
     public func connect(_ peripheral: Peripheral) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task {
-                await self.taskQueue.startConnectTask(peripheral: peripheral) { result in
-                    switch result {
-                        case .success:
-                        continuation.resume()
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
-                }
+                try await taskQueue.addConnect(continuation: continuation, for: peripheral.cbPeripheral.identifier)
+                self.central.connect(peripheral.cbPeripheral, options: nil)
             }
-            self.central.connect(peripheral.cbPeripheral, options: nil)
         }
     }
 
     public func disconnect(_ peripheral: Peripheral) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task {
-                await self.taskQueue.startConnectTask(peripheral: peripheral) { result in
-                    switch result {
-                        case .success:
-                        continuation.resume()
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
-                }
+                try await taskQueue.addConnect(continuation: continuation, for: peripheral.cbPeripheral.identifier)
+                self.central.cancelPeripheralConnection(peripheral.cbPeripheral)
             }
-            self.central.cancelPeripheralConnection(peripheral.cbPeripheral)
         }
     }
 }
