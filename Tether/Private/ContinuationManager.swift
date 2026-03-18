@@ -26,8 +26,8 @@ struct AnyStreamContinuation: Sendable {
 }
 
 actor ContinuationManager<Key: Hashable> {
-    var continuations: [Key: CheckedContinuation<Void, Error>] = [:]
-    var streamContinuations: [Key: AnyStreamContinuation] = [:]
+    private var continuations: [Key: CheckedContinuation<Void, Error>] = [:]
+    private var streamContinuations: [Key: AnyStreamContinuation] = [:]
 
     func waitForContinuation(for key: Key, _ begin: @Sendable () -> Void) async throws {
         if continuations.keys.contains(key) {
@@ -37,6 +37,10 @@ actor ContinuationManager<Key: Hashable> {
             continuations[key] = continuation
             begin()
         }
+    }
+
+    func continuation(for key: Key) -> CheckedContinuation<Void, Error>? {
+        continuations.removeValue(forKey: key)
     }
 
     func waitForStream<T: Sendable>(for key: Key, _ begin: @Sendable (AsyncStream<T>.Continuation) -> Void) async throws -> AsyncStream<T> {
@@ -49,8 +53,8 @@ actor ContinuationManager<Key: Hashable> {
         }
     }
 
-    func continuation(for key: Key) -> CheckedContinuation<Void, Error>? {
-        continuations.removeValue(forKey: key)
+    func hasStream(for key: Key) -> Bool {
+        streamContinuations.keys.contains(key)
     }
 
     func yield<T: Sendable>(_ value: T, for key: Key) {

@@ -232,7 +232,7 @@ public actor TetherCentral: Sendable {
     }
 
     public func isScanning() async -> Bool {
-        await cbCentralDelegate.continuationManager.streamContinuations[.scan] != nil
+        await cbCentralDelegate.continuationManager.hasStream(for: .scan)
     }
 
     public init() {
