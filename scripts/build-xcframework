@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 usage() {
 cat << EOF
-Usage: $0 <scheme> <build_configuration> [<output_directory>]
-    Build xcframework for a give scheme and build configuration.
+Usage: $0 [-h] [-c <build_configuration>] <scheme> [<output_directory>]
+    options:
+        -c    Build configuration. Defaults to "Release".
+        -h    Print this message.
+    Build xcframework for a given scheme.
     Output directory defaults to working directory if not provided.
 EOF
 }
@@ -10,18 +13,13 @@ EOF
 build_xcframework() {
     local scheme=$1
     local config=$2
-    local output_dir="${3:-.}"
-
-    if [[ -z "$scheme" || -z "$config" || -z "$output_dir" ]]; then
-        usage >&2
-        return 1
-    fi
+    local output_dir=$3
 
     local mach_o_type="staticlib"
     local destinations=("generic/platform=iOS" "generic/platform=iOS Simulator")
     local framework_args=()
     local framework_name
-    [[ $config = "Debug" ]] && framework_name="${scheme}.debug" || framework_name="${scheme}.release"
+    [[ $config = "Release" ]] && framework_name="${scheme}" || framework_name="${scheme}.${config}"
     for destination in "${destinations[@]}"; do
         local platform="${destination#*=}"
         platform="${platform/ /_}"
@@ -45,6 +43,33 @@ build_xcframework() {
     xcodebuild -create-xcframework \
                "${framework_args[@]}" \
                -output "${output_dir}/${framework_name}.xcframework"
+    if (( $? > 0)); then
+        printf "Failed to create xcframework.\n" >&2
+        return 1
+    fi
 }
 
-build_xcframework "$@"
+main() {
+    local build_config="Release"
+    while getopts "hc:" opt; do
+        case "$opt" in
+            h) usage; return ;;
+            c) build_config="$OPTARG" ;;
+            *) usage >&2; return 1 ;;
+        esac
+    done
+
+    shift $((OPTIND - 1))
+    local scheme=$1
+    local output_dir="${2:-.}"
+
+    if [[ -z "$scheme" ]]; then
+        printf "%s failed\nError: %s\n\n" "$0" "Missing scheme." >&2
+        usage >&2
+        return 1
+    fi
+
+    build_xcframework "$scheme" "$build_config" "$output_dir"
+}
+
+main "$@"
