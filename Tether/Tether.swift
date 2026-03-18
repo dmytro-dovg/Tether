@@ -91,14 +91,14 @@ extension CentralDelegateHandler: CBCentralManagerDelegate {
 
 
 class PeripheralDelegateHandler: NSObject, @unchecked Sendable {
-    var continuationManager: ContinuationManager<Event> = .init()
+    let continuationManager: ContinuationManager<Event> = .init()
     var logger: Logger?
 }
 
 extension PeripheralDelegateHandler {
     enum Event: Hashable {
         case didDiscoverServices
-        case didDiscoverCharacteristicsFor
+        case didDiscoverCharacteristicsFor(UUID)
     }
 }
 
@@ -140,7 +140,11 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: (any Error)?) {
         Task {
-            let continuation = await continuationManager.continuation(for: .didDiscoverCharacteristicsFor)
+            guard let uuid = service.uuid.nsUUID else {
+                logger?.warning("Cannot get UUID from CBUUID: \(service.uuid)")
+                return
+            }
+            let continuation = await continuationManager.continuation(for: .didDiscoverCharacteristicsFor(uuid))
             if let error {
                 logger?.warning("Peripheral \(peripheral.identifier) failed to discover characteristics for service \(service.uuid) error: \(error.localizedDescription)")
                 continuation?.resume(throwing: error)
@@ -211,7 +215,7 @@ public struct Peripheral: Sendable {
         guard let cbService = cbPeripheral.services?.first(where: { $0.uuid == service.coreBluetoothUUID }) else {
             throw PeripheralError.noService
         }
-        try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverCharacteristicsFor) {
+        try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverCharacteristicsFor(service)) {
             self.cbPeripheral.discoverCharacteristics(characteristics?.coreBluetoothUUIDs, for: cbService)
         }
     }
