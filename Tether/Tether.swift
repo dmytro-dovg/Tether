@@ -142,6 +142,7 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
         Task {
             guard let uuid = service.uuid.nsUUID else {
                 logger?.warning("Cannot get UUID from CBUUID: \(service.uuid)")
+                // There is no way of retrieving correct continuation without storing CBUUID directly. Revisit later.
                 return
             }
             let continuation = await continuationManager.continuation(for: .didDiscoverCharacteristicsFor(uuid))
