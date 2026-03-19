@@ -8,7 +8,7 @@
 import CoreBluetooth
 
 extension UUID {
-    var coreBluetoothUUID: CBUUID { .init(nsuuid: self) }
+    var cbUUID: CBUUID { .init(nsuuid: self) }
 }
 
 extension CBUUID {
@@ -16,5 +16,5 @@ extension CBUUID {
 }
 
 extension Array where Element == UUID {
-    var coreBluetoothUUIDs: [CBUUID] { map { $0.coreBluetoothUUID } }
+    var cbUUIDs: [CBUUID] { map { $0.cbUUID } }
 }

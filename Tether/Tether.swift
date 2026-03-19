@@ -165,7 +165,12 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
         Task {
             let continuation = await continuationManager.readContinuation(for: .didUpdateValueFor(characteristic.uuid))
             if let error {
-                logger?.warning("Peripheral \(peripheral.identifier) failed to read value of characteristics \(characteristic.uuid) error: \(error.localizedDescription)")
+                logger?.warning(
+                    """
+                    Peripheral \(peripheral.identifier) failed to read value \
+                    of characteristics \(characteristic.uuid) error: \(error.localizedDescription)
+                    """
+                )
                 continuation?.resume(throwing: error)
                 return
             }
@@ -186,7 +191,12 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
         Task {
             let continuation = await continuationManager.continuation(for: .didDiscoverDescriptorsFor(characteristic.uuid))
             if let error {
-                logger?.warning("Peripheral \(peripheral.identifier) failed to discover descriptors for \(characteristic.uuid.uuidString) error: \(error.localizedDescription)")
+                logger?.warning(
+                    """
+                    Peripheral \(peripheral.identifier) failed to discover descriptors \
+                    for \(characteristic.uuid.uuidString) error: \(error.localizedDescription)
+                    """
+                )
                 continuation?.resume(throwing: error)
                 return
             }
@@ -234,7 +244,7 @@ public struct Peripheral: Sendable {
         guard let cbCharacteristic = cbPeripheral.services?
             .lazy
             .flatMap({ $0.characteristics ?? [] })
-            .first(where: { $0.uuid == uuid.coreBluetoothUUID })
+            .first(where: { $0.uuid == uuid.cbUUID })
         else {
             throw PeripheralError.noCharacteristic
         }
@@ -242,30 +252,38 @@ public struct Peripheral: Sendable {
     }
 
     public func discoverServices(_ services: [UUID]? = nil) async throws {
-        try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverServices) {
-            self.cbPeripheral.discoverServices(services?.coreBluetoothUUIDs)
+        try await cbPeripheralDelegate
+            .continuationManager
+            .waitForContinuation(for: .didDiscoverServices) {
+            self.cbPeripheral.discoverServices(services?.cbUUIDs)
         }
     }
 
     public func discoverCharacteristics(_ characteristics: [UUID]? = nil, for serviceUuid: UUID) async throws {
-        guard let cbService = cbPeripheral.services?.first(where: { $0.uuid == serviceUuid.coreBluetoothUUID }) else {
+        guard let cbService = cbPeripheral.services?.first(where: { $0.uuid == serviceUuid.cbUUID }) else {
             throw PeripheralError.noService
         }
-        try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverCharacteristicsFor(serviceUuid.coreBluetoothUUID)) {
-            self.cbPeripheral.discoverCharacteristics(characteristics?.coreBluetoothUUIDs, for: cbService)
+        try await cbPeripheralDelegate
+            .continuationManager
+            .waitForContinuation(for: .didDiscoverCharacteristicsFor(serviceUuid.cbUUID)) {
+            self.cbPeripheral.discoverCharacteristics(characteristics?.cbUUIDs, for: cbService)
         }
     }
 
     public func discoverDescriptors(_ characteristicUuid: UUID) async throws {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
-        try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverDescriptorsFor(characteristicUuid.coreBluetoothUUID)) {
+        try await cbPeripheralDelegate
+            .continuationManager
+            .waitForContinuation(for: .didDiscoverDescriptorsFor(characteristicUuid.cbUUID)) {
             self.cbPeripheral.discoverDescriptors(for: cbCharacteristic)
         }
     }
 
     public func readValue(for characteristicUuid: UUID) async throws -> Data? {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
-        return try await cbPeripheralDelegate.continuationManager.waitForReadContinuation(for: .didUpdateValueFor(characteristicUuid.coreBluetoothUUID)) {
+        return try await cbPeripheralDelegate
+            .continuationManager
+            .waitForReadContinuation(for: .didUpdateValueFor(characteristicUuid.cbUUID)) {
             cbPeripheral.readValue(for: cbCharacteristic)
         }
     }
@@ -296,12 +314,14 @@ public actor TetherCentral {
 
     // MARK: - Scanning
     public func scanForPeripherals(withServices services: [UUID]) async throws -> AsyncStream<Peripheral> {
-        try await cbCentralDelegate.continuationManager.waitForStream(for: .scan) { continuation in
+        try await cbCentralDelegate
+            .continuationManager
+            .waitForStream(for: .scan) { continuation in
             continuation.onTermination = { _ in
                 self.cbCentral.stopScan()
                 Task { await self.cbCentralDelegate.continuationManager.finish(.scan) }
             }
-            self.cbCentral.scanForPeripherals(withServices: services.coreBluetoothUUIDs)
+            self.cbCentral.scanForPeripherals(withServices: services.cbUUIDs)
         }
     }
 
@@ -311,13 +331,17 @@ public actor TetherCentral {
 
     // MARK: - Connection
     public func connect(to peripheral: Peripheral) async throws {
-        try await cbCentralDelegate.continuationManager.waitForContinuation(for: .connect(peripheral.identifier)) {
+        try await cbCentralDelegate
+            .continuationManager
+            .waitForContinuation(for: .connect(peripheral.identifier)) {
             self.cbCentral.connect(peripheral.cbPeripheral, options: nil)
         }
     }
 
     public func disconnect(from peripheral: Peripheral) async throws {
-        try await cbCentralDelegate.continuationManager.waitForContinuation(for: .disconnect(peripheral.identifier)) {
+        try await cbCentralDelegate
+            .continuationManager
+            .waitForContinuation(for: .disconnect(peripheral.identifier)) {
             self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
         }
     }
