@@ -43,7 +43,7 @@ extension CentralDelegateHandler: CBCentralManagerDelegate {
 //
 //    }
 
-    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
+    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         Task {
             await continuationManager.yield(Peripheral(cbPeripheral: peripheral), for: .scan)
         }
@@ -89,7 +89,6 @@ extension CentralDelegateHandler: CBCentralManagerDelegate {
     }
 }
 
-
 class PeripheralDelegateHandler: NSObject, @unchecked Sendable {
     let continuationManager: ContinuationManager<Event> = .init()
     var logger: Logger?
@@ -103,7 +102,6 @@ extension PeripheralDelegateHandler {
 }
 
 extension PeripheralDelegateHandler: CBPeripheralDelegate {
-
 
     func peripheralDidUpdateName(_ peripheral: CBPeripheral) {
 
@@ -147,11 +145,21 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
             }
             let continuation = await continuationManager.continuation(for: .didDiscoverCharacteristicsFor(uuid))
             if let error {
-                logger?.warning("Peripheral \(peripheral.identifier) failed to discover characteristics for service \(service.uuid) error: \(error.localizedDescription)")
+                logger?.warning(
+                    """
+                    Peripheral \(peripheral.identifier) failed to discover characteristics \
+                    for service \(service.uuid) error: \(error.localizedDescription)
+                    """
+                )
                 continuation?.resume(throwing: error)
                 return
             }
-            logger?.debug("Peripheral \(peripheral.identifier) did discover characteristics for service \(service.uuid)")
+            logger?.debug(
+                """
+                Peripheral \(peripheral.identifier) did discover characteristics \
+                for service \(service.uuid)
+                """
+            )
             continuation?.resume()
         }
     }
@@ -228,7 +236,7 @@ extension Peripheral: CustomDebugStringConvertible {
     }
 }
 
-public actor TetherCentral: Sendable {
+public actor TetherCentral {
     private let cbCentral: CBCentralManager
     private let cbCentralDelegate: CentralDelegateHandler
     private let logger: Logger = .init(subsystem: "sh.dovgo.tether", category: "central")
@@ -244,7 +252,6 @@ public actor TetherCentral: Sendable {
         self.cbCentralDelegate = CentralDelegateHandler(continuationManager: ContinuationManager(), logger: self.logger)
         self.cbCentral = CBCentralManager(delegate: self.cbCentralDelegate, queue: DispatchQueue.global())
     }
-
 
     // MARK: - Scanning
     public func scanForPeripherals(withServices services: [UUID]) async throws -> AsyncStream<Peripheral> {
@@ -289,26 +296,25 @@ extension TetherCentral {
 fileprivate extension TetherCentral.State {
     var cbState: CBManagerState {
         switch self {
-            case .unknown: return .unknown
-            case .resetting: return .resetting
-            case .unsupported: return .unsupported
-            case .unauthorized: return .unauthorized
-            case .poweredOff: return .poweredOff
-            case .poweredOn: return .poweredOn
+        case .unknown: return .unknown
+        case .resetting: return .resetting
+        case .unsupported: return .unsupported
+        case .unauthorized: return .unauthorized
+        case .poweredOff: return .poweredOff
+        case .poweredOn: return .poweredOn
         }
     }
 
     static func from(cbState: CBManagerState) -> Self {
         switch cbState {
-            case .unknown: return .unknown
-            case .resetting: return .resetting
-            case .unsupported: return .unsupported
-            case .unauthorized: return .unauthorized
-            case .poweredOff: return .poweredOff
-            case .poweredOn: return .poweredOn
+        case .unknown: return .unknown
+        case .resetting: return .resetting
+        case .unsupported: return .unsupported
+        case .unauthorized: return .unauthorized
+        case .poweredOff: return .poweredOff
+        case .poweredOn: return .poweredOn
         @unknown default:
             return .unknown
         }
     }
 }
-
