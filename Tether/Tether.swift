@@ -124,7 +124,8 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: (any Error)?) {
         Task {
-            let continuation = await continuationManager.continuation(for: .didDiscoverServices)
+            let continuation = await continuationManager
+                .continuation(for: .didDiscoverServices, as: [Service].self)
             if let error {
                 logger?.warning("Peripheral \(peripheral.identifier) failed to discover services: \(error.localizedDescription)")
                 continuation?.resume(throwing: error)
@@ -142,7 +143,8 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: (any Error)?) {
         Task {
-            let continuation = await continuationManager.continuation(for: .didDiscoverCharacteristicsFor(service.uuid))
+            let continuation = await continuationManager
+                .continuation(for: .didDiscoverCharacteristicsFor(service.uuid), as: [Characteristic].self)
             if let error {
                 logger?.warning(
                     """
@@ -165,7 +167,8 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
         Task {
-            let continuation = await continuationManager.continuation(for: .didUpdateValueForCharacteristic(characteristic.uuid))
+            let continuation = await continuationManager
+                .continuation(for: .didUpdateValueForCharacteristic(characteristic.uuid), as: Data.self)
             if let error {
                 logger?.warning(
                     """
@@ -192,7 +195,8 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: (any Error)?) {
         Task {
-            let continuation = await continuationManager.continuation(for: .didDiscoverDescriptorsFor(characteristic.uuid))
+            let continuation = await continuationManager
+                .continuation(for: .didDiscoverDescriptorsFor(characteristic.uuid), as: [Descriptor].self)
             if let error {
                 logger?.warning(
                     """
@@ -210,7 +214,8 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor descriptor: CBDescriptor, error: (any Error)?) {
         Task {
-            let continuation = await continuationManager.continuation(for: .didUpdateValueForDescriptor(descriptor.uuid))
+            let continuation = await continuationManager
+                .continuation(for: .didUpdateValueForDescriptor(descriptor.uuid), as: Descriptor.Value.self)
             if let error {
                 logger?.warning(
                     """

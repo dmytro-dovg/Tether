@@ -10,13 +10,30 @@ import Foundation
 enum ContinuationManagerError: Error {
     case continuationAlreadyExists
 }
+
+struct TypedContinuation<T: Sendable>: Sendable {
+    private let wrapped: AnyContinuation
+
+    init(_ wrapped: AnyContinuation) { self.wrapped = wrapped }
+
+    func resume(returning value: T) { wrapped.resume(returning: value) }
+    func resume(throwing error: Error) { wrapped.resume(throwing: error) }
+}
+
+extension TypedContinuation where T == Void {
+    func resume() { wrapped.resume() }
+}
+
 struct AnyContinuation: Sendable {
     private let _resumeWithAny: @Sendable (Any) -> Void
     private let _resumeWithError: @Sendable (Error) -> Void
 
     init<T: Sendable>(_ continuation: CheckedContinuation<T, Error>) {
         _resumeWithAny = { value in
-            // Force unwrap should be safe here
+            // Safe: this closure captures CheckedContinuation<T, Error> at construction time.
+            // The only retrieval path is via ContinuationManager.continuation(for:as:) which returns
+            // TypedContinuation<T> ensuring resume(returning:) can only be called with
+            // a value of the same T that was used to construct this continuation.
             // swiftlint:disable force_cast
             continuation.resume(returning: value as! T)
             // swiftlint:enable force_cast
@@ -69,8 +86,9 @@ actor ContinuationManager<Key: Hashable> {
         }
     }
 
-    func continuation(for key: Key) -> AnyContinuation? {
-        continuations.removeValue(forKey: key)
+    func continuation<T: Sendable>(for key: Key, as type: T.Type = Void.self) -> TypedContinuation<T>? {
+        guard let continuation = continuations.removeValue(forKey: key) else { return nil }
+        return TypedContinuation<T>(continuation)
     }
 
     // MARK: - Stream continuations
