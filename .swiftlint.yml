@@ -4,3 +4,5 @@ line_length:
     ignores_function_declarations: true
     ignores_comments: true
     ignores_urls: true
+file_length:
+    warning: 1000
