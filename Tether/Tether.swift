@@ -98,6 +98,7 @@ extension PeripheralDelegateHandler {
     enum Event: Hashable {
         case didDiscoverServices
         case didDiscoverCharacteristicsFor(CBUUID)
+        case didDiscoverDescriptorsFor(CBUUID)
     }
 }
 
@@ -172,7 +173,16 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: (any Error)?) {
-
+        Task {
+            let continuation = await continuationManager.continuation(for: .didDiscoverDescriptorsFor(characteristic.uuid))
+            if let error {
+                logger?.warning("Peripheral \(peripheral.identifier) failed to discover descriptors: \(error.localizedDescription) for \(characteristic.uuid.uuidString) error: \(error.localizedDescription)")
+                continuation?.resume(throwing: error)
+                return
+            }
+            logger?.debug("Peripheral \(peripheral.identifier) did discover descriptors for \(characteristic.uuid.uuidString)")
+            continuation?.resume()
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor descriptor: CBDescriptor, error: (any Error)?) {
@@ -194,6 +204,7 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
 
 enum PeripheralError: Error {
     case noService
+    case noCharacteristic
 }
 
 public struct Peripheral: Sendable {
@@ -209,6 +220,17 @@ public struct Peripheral: Sendable {
         self.cbPeripheral = cbPeripheral
     }
 
+    private func characteristic(for uuid: UUID) throws -> CBCharacteristic {
+        guard let cbCharacteristic = cbPeripheral.services?
+            .lazy
+            .flatMap({ $0.characteristics ?? [] })
+            .first(where: { $0.uuid == uuid.coreBluetoothUUID })
+        else {
+            throw PeripheralError.noCharacteristic
+        }
+        return cbCharacteristic
+    }
+
     public func discoverServices(_ services: [UUID]? = nil) async throws {
         try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverServices) {
             self.cbPeripheral.discoverServices(services?.coreBluetoothUUIDs)
@@ -219,8 +241,15 @@ public struct Peripheral: Sendable {
         guard let cbService = cbPeripheral.services?.first(where: { $0.uuid == serviceUuid.coreBluetoothUUID }) else {
             throw PeripheralError.noService
         }
-        try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverCharacteristicsFor(CBUUID(nsuuid: serviceUuid))) {
+        try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverCharacteristicsFor(serviceUuid.coreBluetoothUUID)) {
             self.cbPeripheral.discoverCharacteristics(characteristics?.coreBluetoothUUIDs, for: cbService)
+        }
+    }
+
+    public func discoverDescriptors(_ characteristicUuid: UUID) async throws {
+        let cbCharacteristic = try characteristic(for: characteristicUuid)
+        try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverDescriptorsFor(characteristicUuid.coreBluetoothUUID)) {
+            self.cbPeripheral.discoverDescriptors(for: cbCharacteristic)
         }
     }
 }
