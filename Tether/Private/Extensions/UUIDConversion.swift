@@ -12,7 +12,21 @@ extension UUID {
 }
 
 extension CBUUID {
-    var nsUUID: UUID? { .init(uuidString: uuidString) }
+    private static let bluetoothBaseSuffix = "-0000-1000-8000-00805F9B34FB"
+
+    var toFoundationUUID: UUID? {
+        if let uuid = UUID(uuidString: uuidString) { return uuid }
+
+        let expanded: String
+        switch uuidString.count {
+            // 16-bit
+        case 4: expanded = "0000\(uuidString)\(Self.bluetoothBaseSuffix)"
+            // 32-bit
+        case 8: expanded = "\(uuidString)\(Self.bluetoothBaseSuffix)"
+        default: return nil
+        }
+        return UUID(uuidString: expanded)
+    }
 }
 
 extension Array where Element == UUID {

@@ -99,7 +99,8 @@ extension PeripheralDelegateHandler {
         case didDiscoverServices
         case didDiscoverCharacteristicsFor(CBUUID)
         case didDiscoverDescriptorsFor(CBUUID)
-        case didUpdateValueFor(CBUUID)
+        case didUpdateValueForCharacteristic(CBUUID)
+        case didUpdateValueForDescriptor(CBUUID)
     }
 }
 
@@ -130,7 +131,8 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
                 return
             }
             logger?.debug("Peripheral \(peripheral.identifier) did discover services")
-            continuation?.resume()
+
+            continuation?.resume(returning: peripheral.services?.compactMap({ Service(cbService: $0) }) ?? [])
         }
     }
 
@@ -157,13 +159,13 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
                 for service \(service.uuid)
                 """
             )
-            continuation?.resume()
+            continuation?.resume(returning: service.characteristics?.compactMap({ Characteristic(cbCharacteristic: $0) }) ?? [])
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
         Task {
-            let continuation = await continuationManager.readContinuation(for: .didUpdateValueFor(characteristic.uuid))
+            let continuation = await continuationManager.continuation(for: .didUpdateValueForCharacteristic(characteristic.uuid))
             if let error {
                 logger?.warning(
                     """
@@ -201,12 +203,26 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
                 return
             }
             logger?.debug("Peripheral \(peripheral.identifier) did discover descriptors for \(characteristic.uuid.uuidString)")
-            continuation?.resume()
+            continuation?.resume(returning: characteristic.descriptors?.compactMap({ Descriptor(cbDescriptor: $0) }) ?? [])
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor descriptor: CBDescriptor, error: (any Error)?) {
-
+        Task {
+            let continuation = await continuationManager.continuation(for: .didUpdateValueForDescriptor(descriptor.uuid))
+            if let error {
+                logger?.warning(
+                    """
+                    Peripheral \(peripheral.identifier) failed to read value \
+                    of descriptor \(descriptor.uuid) error: \(error.localizedDescription)
+                    """
+                )
+                continuation?.resume(throwing: error)
+                return
+            }
+            logger?.debug("Peripheral \(peripheral.identifier) did read value of descriptor \(descriptor.uuid)")
+            continuation?.resume(returning: Descriptor.Value(cbDescriptor: descriptor))
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor descriptor: CBDescriptor, error: (any Error)?) {
@@ -225,6 +241,94 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
 enum PeripheralError: Error {
     case noService
     case noCharacteristic
+    case noDescriptor
+}
+
+public struct Service: Sendable, Hashable {
+    public let identifier: UUID
+}
+
+extension Service {
+    init?(cbService: CBService) {
+        guard let uuid = cbService.uuid.toFoundationUUID else {
+            return nil
+        }
+        self.init(identifier: uuid)
+    }
+}
+
+public struct Characteristic: Sendable, Hashable {
+    public let identifier: UUID
+    public let properties: Properties
+}
+
+extension Characteristic {
+    init?(cbCharacteristic: CBCharacteristic) {
+        guard let uuid = cbCharacteristic.uuid.toFoundationUUID else {
+            return nil
+        }
+        self.init(identifier: uuid, properties: Properties(rawValue: UInt(cbCharacteristic.properties.rawValue)))
+    }
+}
+
+public struct Descriptor: Sendable, Hashable {
+    public let identifier: UUID
+}
+
+extension Descriptor {
+    init?(cbDescriptor: CBDescriptor) {
+        guard let uuid = cbDescriptor.uuid.toFoundationUUID else {
+            return nil
+        }
+        self.init(identifier: uuid)
+    }
+}
+public extension Descriptor {
+    enum Value: Sendable {
+        case string(String)
+        case number(UInt16)
+        case data(Data)
+        case unknown
+    }
+}
+
+extension Descriptor.Value: Hashable {
+    init(cbDescriptor: CBDescriptor) {
+        switch cbDescriptor.uuid.uuidString {
+        case CBUUIDCharacteristicUserDescriptionString:
+            self = (cbDescriptor.value as? String).map { .string($0) } ?? .unknown
+        case CBUUIDClientCharacteristicConfigurationString,
+             CBUUIDServerCharacteristicConfigurationString,
+             CBUUIDCharacteristicExtendedPropertiesString:
+            self = (cbDescriptor.value as? NSNumber).map { .number($0.uint16Value) } ?? .unknown
+        case CBUUIDCharacteristicFormatString,
+             CBUUIDCharacteristicAggregateFormatString:
+            self = (cbDescriptor.value as? Data).map { .data($0) } ?? .unknown
+        default:
+            self = .unknown
+        }
+    }
+}
+
+public extension Characteristic {
+    struct Properties: OptionSet, Hashable, Sendable {
+        public let rawValue: UInt
+
+        public init(rawValue: UInt) {
+            self.rawValue = rawValue
+        }
+
+        public static let broadcast = Self(rawValue: 0x01)
+        public static let read = Self(rawValue: 0x02)
+        public static let writeWithoutResponse = Self(rawValue: 0x04)
+        public static let write = Self(rawValue: 0x08)
+        public static let notify = Self(rawValue: 0x10)
+        public static let indicate = Self(rawValue: 0x20)
+        public static let authenticatedSignedWrites = Self(rawValue: 0x40)
+        public static let extendedProperties = Self(rawValue: 0x80)
+        public static let notifyEncryptionRequired = Self(rawValue: 0x100)
+        public static let indicateEncryptionRequired = Self(rawValue: 0x200)
+    }
 }
 
 public struct Peripheral: Sendable {
@@ -251,39 +355,51 @@ public struct Peripheral: Sendable {
         return cbCharacteristic
     }
 
-    public func discoverServices(_ services: [UUID]? = nil) async throws {
+    public func discoverServices(_ services: [UUID]? = nil) async throws -> [Service] {
         try await cbPeripheralDelegate
             .continuationManager
-            .waitForContinuation(for: .didDiscoverServices) {
+            .waitForContinuationWithResult(for: .didDiscoverServices) {
             self.cbPeripheral.discoverServices(services?.cbUUIDs)
         }
     }
 
-    public func discoverCharacteristics(_ characteristics: [UUID]? = nil, for serviceUuid: UUID) async throws {
+    public func discoverCharacteristics(_ characteristics: [UUID]? = nil, for serviceUuid: UUID) async throws -> [Characteristic] {
         guard let cbService = cbPeripheral.services?.first(where: { $0.uuid == serviceUuid.cbUUID }) else {
             throw PeripheralError.noService
         }
-        try await cbPeripheralDelegate
+        return try await cbPeripheralDelegate
             .continuationManager
-            .waitForContinuation(for: .didDiscoverCharacteristicsFor(serviceUuid.cbUUID)) {
+            .waitForContinuationWithResult(for: .didDiscoverCharacteristicsFor(serviceUuid.cbUUID)) {
             self.cbPeripheral.discoverCharacteristics(characteristics?.cbUUIDs, for: cbService)
         }
     }
 
-    public func discoverDescriptors(_ characteristicUuid: UUID) async throws {
+    public func discoverDescriptors(_ characteristicUuid: UUID) async throws -> [Descriptor] {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
-        try await cbPeripheralDelegate
+        return try await cbPeripheralDelegate
             .continuationManager
-            .waitForContinuation(for: .didDiscoverDescriptorsFor(characteristicUuid.cbUUID)) {
+            .waitForContinuationWithResult(for: .didDiscoverDescriptorsFor(characteristicUuid.cbUUID)) {
             self.cbPeripheral.discoverDescriptors(for: cbCharacteristic)
         }
+    }
+
+    public func readValue(for descriptorUuid: UUID, of characteristicUuid: UUID) async throws -> Descriptor.Value? {
+        let cbCharacteristic = try characteristic(for: characteristicUuid)
+        guard let cbDescriptor = cbCharacteristic.descriptors?.first(where: { $0.uuid.toFoundationUUID == descriptorUuid }) else {
+            throw PeripheralError.noDescriptor
+        }
+        return try await cbPeripheralDelegate
+            .continuationManager
+            .waitForContinuationWithResult(for: .didUpdateValueForDescriptor(descriptorUuid.cbUUID)) {
+                cbPeripheral.readValue(for: cbDescriptor)
+            }
     }
 
     public func readValue(for characteristicUuid: UUID) async throws -> Data? {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         return try await cbPeripheralDelegate
             .continuationManager
-            .waitForReadContinuation(for: .didUpdateValueFor(characteristicUuid.cbUUID)) {
+            .waitForContinuationWithResult(for: .didUpdateValueForCharacteristic(characteristicUuid.cbUUID)) {
             cbPeripheral.readValue(for: cbCharacteristic)
         }
     }

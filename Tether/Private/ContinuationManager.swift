@@ -10,6 +10,24 @@ import Foundation
 enum ContinuationManagerError: Error {
     case continuationAlreadyExists
 }
+struct AnyContinuation: Sendable {
+    private let _resumeWithAny: @Sendable (Any) -> Void
+    private let _resumeWithError: @Sendable (Error) -> Void
+
+    init<T: Sendable>(_ continuation: CheckedContinuation<T, Error>) {
+        _resumeWithAny = { value in
+            // Force unwrap should be safe here
+            // swiftlint:disable force_cast
+            continuation.resume(returning: value as! T)
+            // swiftlint:enable force_cast
+        }
+        _resumeWithError = { continuation.resume(throwing: $0) }
+    }
+
+    func resume<T: Sendable>(returning value: T) { _resumeWithAny(value) }
+    func resume(throwing error: Error) { _resumeWithError(error) }
+    func resume() { _resumeWithAny(()) }
+}
 
 struct AnyStreamContinuation: Sendable {
     private let _yield: @Sendable (Any) -> Void
@@ -27,28 +45,37 @@ struct AnyStreamContinuation: Sendable {
 }
 
 actor ContinuationManager<Key: Hashable> {
-    private var continuations: [Key: CheckedContinuation<Void, Error>] = [:]
-    private var readContinuations: [Key: CheckedContinuation<Data?, Error>] = [:]
+    private var continuations: [Key: AnyContinuation] = [:]
     private var streamContinuations: [Key: AnyStreamContinuation] = [:]
 
     // MARK: - Void continuations
     func waitForContinuation(for key: Key, _ begin: @Sendable () -> Void) async throws {
-        if continuations.keys.contains(key) {
+        guard !continuations.keys.contains(key) else {
             throw ContinuationManagerError.continuationAlreadyExists
         }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            continuations[key] = continuation
+            continuations[key] = AnyContinuation(continuation)
             begin()
         }
     }
 
-    func continuation(for key: Key) -> CheckedContinuation<Void, Error>? {
+    func waitForContinuationWithResult<T: Sendable>(for key: Key, _ begin: @Sendable () -> Void) async throws -> T {
+        guard !continuations.keys.contains(key) else {
+            throw ContinuationManagerError.continuationAlreadyExists
+        }
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
+            continuations[key] = AnyContinuation(continuation)
+            begin()
+        }
+    }
+
+    func continuation(for key: Key) -> AnyContinuation? {
         continuations.removeValue(forKey: key)
     }
 
     // MARK: - Stream continuations
     func waitForStream<T: Sendable>(for key: Key, _ begin: @Sendable (AsyncStream<T>.Continuation) -> Void) async throws -> AsyncStream<T> {
-        if streamContinuations.keys.contains(key) {
+        guard !streamContinuations.keys.contains(key) else {
             throw ContinuationManagerError.continuationAlreadyExists
         }
         return AsyncStream(T.self) { continuation in
@@ -73,20 +100,5 @@ actor ContinuationManager<Key: Hashable> {
             continuation.finish()
         }
 
-    }
-
-    // MARK: - Read continuations
-    func waitForReadContinuation(for key: Key, _ begin: @Sendable () -> Void) async throws -> Data? {
-        if readContinuations.keys.contains(key) {
-            throw ContinuationManagerError.continuationAlreadyExists
-        }
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
-            readContinuations[key] = continuation
-            begin()
-        }
-    }
-
-    func readContinuation(for key: Key) -> CheckedContinuation<Data?, Error>? {
-        readContinuations.removeValue(forKey: key)
     }
 }
