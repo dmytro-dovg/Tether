@@ -5,6 +5,8 @@
 //  Created by Dmytro Dovgoshliubnyi on 2026-03-18.
 //
 
+import Foundation
+
 enum ContinuationManagerError: Error {
     case continuationAlreadyExists
 }
@@ -26,8 +28,10 @@ struct AnyStreamContinuation: Sendable {
 
 actor ContinuationManager<Key: Hashable> {
     private var continuations: [Key: CheckedContinuation<Void, Error>] = [:]
+    private var readContinuations: [Key: CheckedContinuation<Data?, Error>] = [:]
     private var streamContinuations: [Key: AnyStreamContinuation] = [:]
 
+    // MARK: - Void continuations
     func waitForContinuation(for key: Key, _ begin: @Sendable () -> Void) async throws {
         if continuations.keys.contains(key) {
             throw ContinuationManagerError.continuationAlreadyExists
@@ -42,6 +46,7 @@ actor ContinuationManager<Key: Hashable> {
         continuations.removeValue(forKey: key)
     }
 
+    // MARK: - Stream continuations
     func waitForStream<T: Sendable>(for key: Key, _ begin: @Sendable (AsyncStream<T>.Continuation) -> Void) async throws -> AsyncStream<T> {
         if streamContinuations.keys.contains(key) {
             throw ContinuationManagerError.continuationAlreadyExists
@@ -68,5 +73,20 @@ actor ContinuationManager<Key: Hashable> {
             continuation.finish()
         }
 
+    }
+
+    // MARK: - Read continuations
+    func waitForReadContinuation(for key: Key, _ begin: @Sendable () -> Void) async throws -> Data? {
+        if readContinuations.keys.contains(key) {
+            throw ContinuationManagerError.continuationAlreadyExists
+        }
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
+            readContinuations[key] = continuation
+            begin()
+        }
+    }
+
+    func readContinuation(for key: Key) -> CheckedContinuation<Data?, Error>? {
+        readContinuations.removeValue(forKey: key)
     }
 }

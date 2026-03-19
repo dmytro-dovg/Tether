@@ -99,6 +99,7 @@ extension PeripheralDelegateHandler {
         case didDiscoverServices
         case didDiscoverCharacteristicsFor(CBUUID)
         case didDiscoverDescriptorsFor(CBUUID)
+        case didUpdateValueFor(CBUUID)
     }
 }
 
@@ -161,7 +162,16 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
-
+        Task {
+            let continuation = await continuationManager.readContinuation(for: .didUpdateValueFor(characteristic.uuid))
+            if let error {
+                logger?.warning("Peripheral \(peripheral.identifier) failed to read value of characteristics \(characteristic.uuid) error: \(error.localizedDescription)")
+                continuation?.resume(throwing: error)
+                return
+            }
+            logger?.debug("Peripheral \(peripheral.identifier) did read value of characteristics \(characteristic.uuid)")
+            continuation?.resume(returning: characteristic.value)
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: (any Error)?) {
@@ -250,6 +260,13 @@ public struct Peripheral: Sendable {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         try await cbPeripheralDelegate.continuationManager.waitForContinuation(for: .didDiscoverDescriptorsFor(characteristicUuid.coreBluetoothUUID)) {
             self.cbPeripheral.discoverDescriptors(for: cbCharacteristic)
+        }
+    }
+
+    public func readValue(for characteristicUuid: UUID) async throws -> Data? {
+        let cbCharacteristic = try characteristic(for: characteristicUuid)
+        return try await cbPeripheralDelegate.continuationManager.waitForReadContinuation(for: .didUpdateValueFor(characteristicUuid.coreBluetoothUUID)) {
+            cbPeripheral.readValue(for: cbCharacteristic)
         }
     }
 }
