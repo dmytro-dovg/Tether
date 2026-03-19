@@ -177,7 +177,8 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
                 return
             }
             logger?.debug("Peripheral \(peripheral.identifier) did read value of characteristics \(characteristic.uuid)")
-            continuation?.resume(returning: characteristic.value)
+            guard let data = characteristic.value else { throw PeripheralError.noValue }
+            continuation?.resume(returning: data)
         }
     }
 
@@ -242,6 +243,7 @@ enum PeripheralError: Error {
     case noService
     case noCharacteristic
     case noDescriptor
+    case noValue
 }
 
 public struct Service: Sendable, Hashable {
@@ -383,7 +385,7 @@ public struct Peripheral: Sendable {
         }
     }
 
-    public func readValue(for descriptorUuid: UUID, of characteristicUuid: UUID) async throws -> Descriptor.Value? {
+    public func readValue(for descriptorUuid: UUID, of characteristicUuid: UUID) async throws -> Descriptor.Value {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         guard let cbDescriptor = cbCharacteristic.descriptors?.first(where: { $0.uuid.toFoundationUUID == descriptorUuid }) else {
             throw PeripheralError.noDescriptor
@@ -395,7 +397,7 @@ public struct Peripheral: Sendable {
             }
     }
 
-    public func readValue(for characteristicUuid: UUID) async throws -> Data? {
+    public func readValue(for characteristicUuid: UUID) async throws -> Data {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         return try await cbPeripheralDelegate
             .continuationManager
