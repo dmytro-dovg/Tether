@@ -186,7 +186,7 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
         Task {
             let continuation = await continuationManager.continuation(for: .didDiscoverDescriptorsFor(characteristic.uuid))
             if let error {
-                logger?.warning("Peripheral \(peripheral.identifier) failed to discover descriptors: \(error.localizedDescription) for \(characteristic.uuid.uuidString) error: \(error.localizedDescription)")
+                logger?.warning("Peripheral \(peripheral.identifier) failed to discover descriptors for \(characteristic.uuid.uuidString) error: \(error.localizedDescription)")
                 continuation?.resume(throwing: error)
                 return
             }
