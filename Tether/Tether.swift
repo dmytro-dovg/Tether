@@ -428,19 +428,25 @@ public struct Peripheral: Sendable {
             }
     }
 
-    public func writeValue(value: Data, for characteristicUuid: UUID, withoutResponse: Bool = false) async throws {
+    public func writeValue(_ value: Data, for characteristicUuid: UUID) async throws {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
-        if withoutResponse ?
-            !cbCharacteristic.properties.contains(.writeWithoutResponse) :
-                !cbCharacteristic.properties.contains(.write) {
+        guard cbCharacteristic.properties.contains(.write) else {
             throw PeripheralError.characteristicWrongType
         }
         try await cbPeripheralDelegate
             .continuationManager
             .waitForContinuation(for: .didWriteValueForCharacteristic(characteristicUuid.cbUUID)) {
-                cbPeripheral.writeValue(value, for: cbCharacteristic, type: withoutResponse ? .withoutResponse : .withResponse)
-        }
+                cbPeripheral.writeValue(value, for: cbCharacteristic, type: .withResponse)
+            }
+    }
 
+    public func writeValueWithoutResponse(_ value: Data, for characteristicUuid: UUID) throws {
+        let cbCharacteristic = try characteristic(for: characteristicUuid)
+
+        guard cbCharacteristic.properties.contains(.writeWithoutResponse) else {
+            throw PeripheralError.characteristicWrongType
+        }
+        cbPeripheral.writeValue(value, for: cbCharacteristic, type: .withoutResponse)
     }
 }
 
