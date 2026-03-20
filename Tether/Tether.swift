@@ -102,6 +102,8 @@ extension PeripheralDelegateHandler {
         case didUpdateValueForCharacteristic(CBUUID)
         case didWriteValueForCharacteristic(CBUUID)
         case didUpdateValueForDescriptor(CBUUID)
+        case didUpdateNotificationStateFor(CBUUID)
+        case notification(CBUUID)
     }
 }
 
@@ -167,22 +169,45 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
+        // Capture value before Task
+        let data = characteristic.value
         Task {
-            let continuation = await continuationManager
-                .continuation(for: .didUpdateValueForCharacteristic(characteristic.uuid), as: Data.self)
-            if let error {
-                logger?.warning(
-                    """
-                    Peripheral \(peripheral.identifier) failed to read value \
-                    of characteristics \(characteristic.uuid) error: \(error.localizedDescription)
-                    """
-                )
-                continuation?.resume(throwing: error)
-                return
+            if let readContinuation = await continuationManager.continuation(
+                for: .didUpdateValueForCharacteristic(characteristic.uuid), as: Data.self) {
+                guard let data else {
+                    readContinuation.resume(throwing: PeripheralError.noValue)
+                    return
+                }
+                if let error {
+                    logger?.warning(
+                        """
+                        Peripheral \(peripheral.identifier) failed to read value \
+                        of characteristics \(characteristic.uuid) error: \(error.localizedDescription)
+                        """
+                    )
+                    readContinuation.resume(throwing: error)
+                    return
+                }
+                logger?.debug("Peripheral \(peripheral.identifier) did read value of characteristics \(characteristic.uuid)")
+                readContinuation.resume(returning: data)
+            } else {
+                if let error {
+                    logger?.warning(
+                        """
+                        Peripheral \(peripheral.identifier) notification value failure \
+                        of characteristics \(characteristic.uuid) error: \(error.localizedDescription)
+                        """
+                    )
+                    return
+                }
+                logger?.debug("Peripheral \(peripheral.identifier) did receive notification for characteristics \(characteristic.uuid)")
+                guard let data else {
+                    // Nothing to yield
+                    return
+                }
+                await continuationManager.yield(data, for: .notification(characteristic.uuid))
             }
-            logger?.debug("Peripheral \(peripheral.identifier) did read value of characteristics \(characteristic.uuid)")
-            guard let data = characteristic.value else { throw PeripheralError.noValue }
-            continuation?.resume(returning: data)
+
         }
     }
 
@@ -206,7 +231,26 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: (any Error)?) {
-
+        Task {
+            let continuation = await continuationManager
+                .continuation(for: .didUpdateNotificationStateFor(characteristic.uuid))
+            if let error {
+                logger?.warning(
+                    """
+                    Peripheral \(peripheral.identifier) failed to update notification state \
+                    of characteristics \(characteristic.uuid) error: \(error.localizedDescription)
+                    """
+                )
+                continuation?.resume(throwing: error)
+                return
+            }
+            logger?.debug("""
+                    Peripheral \(peripheral.identifier) did update notification state \
+                    (\(characteristic.isNotifying ? "on" : "off")) \(characteristic.uuid)
+                    """
+            )
+            continuation?.resume()
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverDescriptorsFor characteristic: CBCharacteristic, error: (any Error)?) {
@@ -447,6 +491,27 @@ public struct Peripheral: Sendable {
             throw PeripheralError.characteristicWrongType
         }
         cbPeripheral.writeValue(value, for: cbCharacteristic, type: .withoutResponse)
+    }
+
+    public func waitForNotifications(for characteristicUuid: UUID) async throws -> AsyncStream<Data> {
+        let cbCharacteristic = try characteristic(for: characteristicUuid)
+        guard cbCharacteristic.properties.contains(.write) ||
+                cbCharacteristic.properties.contains(.indicate)else {
+            throw PeripheralError.characteristicWrongType
+        }
+        try await cbPeripheralDelegate.continuationManager
+                .waitForContinuation(for: .didUpdateNotificationStateFor(characteristicUuid.cbUUID)) {
+                    cbPeripheral.setNotifyValue(true, for: cbCharacteristic)
+                }
+        return try await cbPeripheralDelegate
+            .continuationManager
+            .waitForStream(for: .notification(characteristicUuid.cbUUID)) { continuation in
+            continuation.onTermination = { _ in
+                cbPeripheral.setNotifyValue(false, for: cbCharacteristic)
+                Task { await self.cbPeripheralDelegate.continuationManager.finish(.notification(characteristicUuid.cbUUID)) }
+            }
+
+        }
     }
 }
 

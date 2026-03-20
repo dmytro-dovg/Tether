@@ -113,8 +113,7 @@ actor ContinuationManager<Key: Hashable> {
     }
 
     func finish(_ key: Key) {
-        if let continuation = streamContinuations[key] {
-            streamContinuations.removeValue(forKey: key)
+        if let continuation = streamContinuations.removeValue(forKey: key) {
             continuation.finish()
         }
 
