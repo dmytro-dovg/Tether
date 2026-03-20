@@ -100,6 +100,7 @@ extension PeripheralDelegateHandler {
         case didDiscoverCharacteristicsFor(CBUUID)
         case didDiscoverDescriptorsFor(CBUUID)
         case didUpdateValueForCharacteristic(CBUUID)
+        case didWriteValueForCharacteristic(CBUUID)
         case didUpdateValueForDescriptor(CBUUID)
     }
 }
@@ -186,7 +187,22 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: (any Error)?) {
-
+        Task {
+            let continuation = await continuationManager
+                .continuation(for: .didWriteValueForCharacteristic(characteristic.uuid))
+            if let error {
+                logger?.warning(
+                    """
+                    Peripheral \(peripheral.identifier) failed to write value \
+                    of characteristics \(characteristic.uuid) error: \(error.localizedDescription)
+                    """
+                )
+                continuation?.resume(throwing: error)
+                return
+            }
+            logger?.debug("Peripheral \(peripheral.identifier) did write value of characteristics \(characteristic.uuid)")
+            continuation?.resume()
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: (any Error)?) {
@@ -249,6 +265,7 @@ enum PeripheralError: Error {
     case noCharacteristic
     case noDescriptor
     case noValue
+    case characteristicWrongType
 }
 
 public struct Service: Sendable, Hashable {
@@ -408,7 +425,22 @@ public struct Peripheral: Sendable {
             .continuationManager
             .waitForContinuationWithResult(for: .didUpdateValueForCharacteristic(characteristicUuid.cbUUID)) {
             cbPeripheral.readValue(for: cbCharacteristic)
+            }
+    }
+
+    public func writeValue(value: Data, for characteristicUuid: UUID, withoutResponse: Bool = false) async throws {
+        let cbCharacteristic = try characteristic(for: characteristicUuid)
+        if withoutResponse ?
+            !cbCharacteristic.properties.contains(.writeWithoutResponse) :
+                !cbCharacteristic.properties.contains(.write) {
+            throw PeripheralError.characteristicWrongType
         }
+        try await cbPeripheralDelegate
+            .continuationManager
+            .waitForContinuation(for: .didWriteValueForCharacteristic(characteristicUuid.cbUUID)) {
+                cbPeripheral.writeValue(value, for: cbCharacteristic, type: withoutResponse ? .withoutResponse : .withResponse)
+        }
+
     }
 }
 
