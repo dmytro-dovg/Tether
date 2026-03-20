@@ -39,9 +39,9 @@ extension CentralDelegateHandler: CBCentralManagerDelegate {
 
     }
 
-//    func centralManager(_ central: CBCentralManager, willRestoreState dict: [String : Any]) {
+//   func centralManager(_ central: CBCentralManager, willRestoreState dict: [String : Any]) {
 //
-//    }
+//   }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         Task {
@@ -67,7 +67,9 @@ extension CentralDelegateHandler: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
         if let error {
             logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
-            Task { await continuationManager.continuation(for: .disconnect(peripheral.identifier))?.resume(throwing: error) }
+            Task {
+                await continuationManager.continuation(for: .disconnect(peripheral.identifier))?.resume(throwing: error)
+            }
             return
         }
         Task {
@@ -79,7 +81,9 @@ extension CentralDelegateHandler: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, timestamp: CFAbsoluteTime, isReconnecting: Bool, error: (any Error)?) {
         if let error {
             logger?.warning("Disconnected(2) with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
-            Task { await continuationManager.continuation(for: .disconnect(peripheral.identifier))?.resume(throwing: error) }
+            Task {
+                await continuationManager.continuation(for: .disconnect(peripheral.identifier))?.resume(throwing: error)
+            }
             return
         }
         Task {
@@ -427,8 +431,8 @@ public struct Peripheral: Sendable {
         try await cbPeripheralDelegate
             .continuationManager
             .waitForContinuationWithResult(for: .didDiscoverServices) {
-            self.cbPeripheral.discoverServices(services?.cbUUIDs)
-        }
+                self.cbPeripheral.discoverServices(services?.cbUUIDs)
+            }
     }
 
     public func discoverCharacteristics(_ characteristics: [UUID]? = nil, for serviceUuid: UUID) async throws -> [Characteristic] {
@@ -438,8 +442,8 @@ public struct Peripheral: Sendable {
         return try await cbPeripheralDelegate
             .continuationManager
             .waitForContinuationWithResult(for: .didDiscoverCharacteristicsFor(serviceUuid.cbUUID)) {
-            self.cbPeripheral.discoverCharacteristics(characteristics?.cbUUIDs, for: cbService)
-        }
+                self.cbPeripheral.discoverCharacteristics(characteristics?.cbUUIDs, for: cbService)
+            }
     }
 
     public func discoverDescriptors(_ characteristicUuid: UUID) async throws -> [Descriptor] {
@@ -447,8 +451,8 @@ public struct Peripheral: Sendable {
         return try await cbPeripheralDelegate
             .continuationManager
             .waitForContinuationWithResult(for: .didDiscoverDescriptorsFor(characteristicUuid.cbUUID)) {
-            self.cbPeripheral.discoverDescriptors(for: cbCharacteristic)
-        }
+                self.cbPeripheral.discoverDescriptors(for: cbCharacteristic)
+            }
     }
 
     public func readValue(for descriptorUuid: UUID, of characteristicUuid: UUID) async throws -> Descriptor.Value {
@@ -468,7 +472,7 @@ public struct Peripheral: Sendable {
         return try await cbPeripheralDelegate
             .continuationManager
             .waitForContinuationWithResult(for: .didUpdateValueForCharacteristic(characteristicUuid.cbUUID)) {
-            cbPeripheral.readValue(for: cbCharacteristic)
+                cbPeripheral.readValue(for: cbCharacteristic)
             }
     }
 
@@ -500,18 +504,19 @@ public struct Peripheral: Sendable {
             throw PeripheralError.characteristicWrongType
         }
         try await cbPeripheralDelegate.continuationManager
-                .waitForContinuation(for: .didUpdateNotificationStateFor(characteristicUuid.cbUUID)) {
-                    cbPeripheral.setNotifyValue(true, for: cbCharacteristic)
-                }
+            .waitForContinuation(for: .didUpdateNotificationStateFor(characteristicUuid.cbUUID)) {
+                cbPeripheral.setNotifyValue(true, for: cbCharacteristic)
+            }
         return try await cbPeripheralDelegate
             .continuationManager
             .waitForStream(for: .notification(characteristicUuid.cbUUID)) { continuation in
-            continuation.onTermination = { _ in
-                cbPeripheral.setNotifyValue(false, for: cbCharacteristic)
-                Task { await self.cbPeripheralDelegate.continuationManager.finish(.notification(characteristicUuid.cbUUID)) }
+                continuation.onTermination = { _ in
+                    cbPeripheral.setNotifyValue(false, for: cbCharacteristic)
+                    Task {
+                        await self.cbPeripheralDelegate.continuationManager.finish(.notification(characteristicUuid.cbUUID))
+                    }
+                }
             }
-
-        }
     }
 }
 
@@ -543,12 +548,14 @@ public actor TetherCentral {
         try await cbCentralDelegate
             .continuationManager
             .waitForStream(for: .scan) { continuation in
-            continuation.onTermination = { _ in
-                self.cbCentral.stopScan()
-                Task { await self.cbCentralDelegate.continuationManager.finish(.scan) }
+                continuation.onTermination = { _ in
+                    self.cbCentral.stopScan()
+                    Task {
+                        await self.cbCentralDelegate.continuationManager.finish(.scan)
+                    }
+                }
+                self.cbCentral.scanForPeripherals(withServices: services.cbUUIDs)
             }
-            self.cbCentral.scanForPeripherals(withServices: services.cbUUIDs)
-        }
     }
 
     public func stopScan() async {
@@ -560,16 +567,16 @@ public actor TetherCentral {
         try await cbCentralDelegate
             .continuationManager
             .waitForContinuation(for: .connect(peripheral.identifier)) {
-            self.cbCentral.connect(peripheral.cbPeripheral, options: nil)
-        }
+                self.cbCentral.connect(peripheral.cbPeripheral, options: nil)
+            }
     }
 
     public func disconnect(from peripheral: Peripheral) async throws {
         try await cbCentralDelegate
             .continuationManager
             .waitForContinuation(for: .disconnect(peripheral.identifier)) {
-            self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
-        }
+                self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
+            }
     }
 }
 
