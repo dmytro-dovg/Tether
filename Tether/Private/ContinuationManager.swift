@@ -96,10 +96,10 @@ actor ContinuationManager<Key: Hashable> {
         guard !streamContinuations.keys.contains(key) else {
             throw ContinuationManagerError.continuationAlreadyExists
         }
-        return AsyncStream(T.self) { continuation in
-            streamContinuations[key] = AnyStreamContinuation(continuation)
-            begin(continuation)
-        }
+        let (stream, continuation) = AsyncStream<T>.makeStream()
+        streamContinuations[key] = AnyStreamContinuation(continuation)
+        begin(continuation)
+        return stream
     }
 
     func hasStream(for key: Key) -> Bool {

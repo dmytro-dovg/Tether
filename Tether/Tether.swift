@@ -500,7 +500,7 @@ public struct Peripheral: Sendable {
     public func notificationStream(for characteristicUuid: UUID) async throws -> AsyncStream<Data> {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         guard cbCharacteristic.properties.contains(.notify) ||
-                cbCharacteristic.properties.contains(.indicate)else {
+                cbCharacteristic.properties.contains(.indicate) else {
             throw PeripheralError.characteristicWrongType
         }
         try await cbPeripheralDelegate.continuationManager
