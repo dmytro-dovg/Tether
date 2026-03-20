@@ -178,10 +178,6 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
         Task {
             if let readContinuation = await continuationManager.continuation(
                 for: .didUpdateValueForCharacteristic(characteristic.uuid), as: Data.self) {
-                guard let data else {
-                    readContinuation.resume(throwing: PeripheralError.noValue)
-                    return
-                }
                 if let error {
                     logger?.warning(
                         """
@@ -190,6 +186,10 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
                         """
                     )
                     readContinuation.resume(throwing: error)
+                    return
+                }
+                guard let data else {
+                    readContinuation.resume(throwing: PeripheralError.noValue)
                     return
                 }
                 logger?.debug("Peripheral \(peripheral.identifier) did read value of characteristics \(characteristic.uuid)")
