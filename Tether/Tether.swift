@@ -497,7 +497,7 @@ public struct Peripheral: Sendable {
         cbPeripheral.writeValue(value, for: cbCharacteristic, type: .withoutResponse)
     }
 
-    public func waitForNotifications(for characteristicUuid: UUID) async throws -> AsyncStream<Data> {
+    public func notificationStream(for characteristicUuid: UUID) async throws -> AsyncStream<Data> {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         guard cbCharacteristic.properties.contains(.notify) ||
                 cbCharacteristic.properties.contains(.indicate)else {
