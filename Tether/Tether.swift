@@ -37,7 +37,7 @@ extension CentralDelegateHandler {
 
 extension CentralDelegateHandler: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        let state = TetherCentral.State.from(cbState: central.state)
+        let state = TetherCentral.State(central.state)
         Task {
             await self.continuationManager.yield(state) {
                 if case .state = $0 {
@@ -530,18 +530,12 @@ public struct Peripheral: Sendable {
     }
 }
 
-extension Peripheral: CustomDebugStringConvertible {
-    public var debugDescription: String {
-        "Name: \(name ?? "Unknown"), UUID: \(identifier.uuidString)"
-    }
-}
-
 public actor TetherCentral {
     private let cbCentral: CBCentralManager
     private let cbCentralDelegate: CentralDelegateHandler
     private let logger: Logger = .init(subsystem: "sh.dovgo.tether", category: "central")
     public var state: State {
-        State.from(cbState: cbCentral.state)
+        State(cbCentral.state)
     }
 
     public func isScanning() async -> Bool {
@@ -613,8 +607,8 @@ public actor TetherCentral {
     }
 }
 
-extension TetherCentral {
-    public enum State: Sendable {
+public extension TetherCentral {
+    enum State: Sendable {
         case unknown
         case resetting
         case unsupported
@@ -636,16 +630,15 @@ fileprivate extension TetherCentral.State {
         }
     }
 
-    static func from(cbState: CBManagerState) -> Self {
+    init(_ cbState: CBManagerState) {
         switch cbState {
-        case .unknown: return .unknown
-        case .resetting: return .resetting
-        case .unsupported: return .unsupported
-        case .unauthorized: return .unauthorized
-        case .poweredOff: return .poweredOff
-        case .poweredOn: return .poweredOn
-        @unknown default:
-            return .unknown
+        case .resetting: self = .resetting
+        case .unsupported: self = .unsupported
+        case .unauthorized: self = .unauthorized
+        case .poweredOff: self = .poweredOff
+        case .poweredOn: self = .poweredOn
+        default:
+            self = .unknown
         }
     }
 }
