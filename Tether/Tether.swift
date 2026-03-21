@@ -430,7 +430,7 @@ public struct Peripheral: Sendable {
     public func discoverServices(_ services: [UUID]? = nil) async throws -> [Service] {
         try await cbPeripheralDelegate
             .continuationManager
-            .waitForContinuationWithResult(for: .didDiscoverServices) {
+            .continuationWithResult(for: .didDiscoverServices) {
                 self.cbPeripheral.discoverServices(services?.cbUUIDs)
             }
     }
@@ -441,7 +441,7 @@ public struct Peripheral: Sendable {
         }
         return try await cbPeripheralDelegate
             .continuationManager
-            .waitForContinuationWithResult(for: .didDiscoverCharacteristicsFor(serviceUuid.cbUUID)) {
+            .continuationWithResult(for: .didDiscoverCharacteristicsFor(serviceUuid.cbUUID)) {
                 self.cbPeripheral.discoverCharacteristics(characteristics?.cbUUIDs, for: cbService)
             }
     }
@@ -450,7 +450,7 @@ public struct Peripheral: Sendable {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         return try await cbPeripheralDelegate
             .continuationManager
-            .waitForContinuationWithResult(for: .didDiscoverDescriptorsFor(characteristicUuid.cbUUID)) {
+            .continuationWithResult(for: .didDiscoverDescriptorsFor(characteristicUuid.cbUUID)) {
                 self.cbPeripheral.discoverDescriptors(for: cbCharacteristic)
             }
     }
@@ -462,7 +462,7 @@ public struct Peripheral: Sendable {
         }
         return try await cbPeripheralDelegate
             .continuationManager
-            .waitForContinuationWithResult(for: .didUpdateValueForDescriptor(descriptorUuid.cbUUID)) {
+            .continuationWithResult(for: .didUpdateValueForDescriptor(descriptorUuid.cbUUID)) {
                 cbPeripheral.readValue(for: cbDescriptor)
             }
     }
@@ -471,7 +471,7 @@ public struct Peripheral: Sendable {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         return try await cbPeripheralDelegate
             .continuationManager
-            .waitForContinuationWithResult(for: .didUpdateValueForCharacteristic(characteristicUuid.cbUUID)) {
+            .continuationWithResult(for: .didUpdateValueForCharacteristic(characteristicUuid.cbUUID)) {
                 cbPeripheral.readValue(for: cbCharacteristic)
             }
     }
@@ -483,7 +483,7 @@ public struct Peripheral: Sendable {
         }
         try await cbPeripheralDelegate
             .continuationManager
-            .waitForContinuation(for: .didWriteValueForCharacteristic(characteristicUuid.cbUUID)) {
+            .continuation(for: .didWriteValueForCharacteristic(characteristicUuid.cbUUID)) {
                 cbPeripheral.writeValue(value, for: cbCharacteristic, type: .withResponse)
             }
     }
@@ -504,12 +504,12 @@ public struct Peripheral: Sendable {
             throw PeripheralError.characteristicWrongType
         }
         try await cbPeripheralDelegate.continuationManager
-            .waitForContinuation(for: .didUpdateNotificationStateFor(characteristicUuid.cbUUID)) {
+            .continuation(for: .didUpdateNotificationStateFor(characteristicUuid.cbUUID)) {
                 cbPeripheral.setNotifyValue(true, for: cbCharacteristic)
             }
         return try await cbPeripheralDelegate
             .continuationManager
-            .waitForStream(for: .notification(characteristicUuid.cbUUID)) { continuation in
+            .stream(for: .notification(characteristicUuid.cbUUID)) { continuation in
                 continuation.onTermination = { _ in
                     cbPeripheral.setNotifyValue(false, for: cbCharacteristic)
                     Task {
@@ -547,7 +547,7 @@ public actor TetherCentral {
     public func scanForPeripherals(withServices services: [UUID]) async throws -> AsyncStream<Peripheral> {
         try await cbCentralDelegate
             .continuationManager
-            .waitForStream(for: .scan) { continuation in
+            .stream(for: .scan) { continuation in
                 continuation.onTermination = { _ in
                     self.cbCentral.stopScan()
                     Task {
@@ -566,7 +566,7 @@ public actor TetherCentral {
     public func connect(to peripheral: Peripheral) async throws {
         try await cbCentralDelegate
             .continuationManager
-            .waitForContinuation(for: .connect(peripheral.identifier)) {
+            .continuation(for: .connect(peripheral.identifier)) {
                 self.cbCentral.connect(peripheral.cbPeripheral, options: nil)
             }
     }
@@ -574,7 +574,7 @@ public actor TetherCentral {
     public func disconnect(from peripheral: Peripheral) async throws {
         try await cbCentralDelegate
             .continuationManager
-            .waitForContinuation(for: .disconnect(peripheral.identifier)) {
+            .continuation(for: .disconnect(peripheral.identifier)) {
                 self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
             }
     }

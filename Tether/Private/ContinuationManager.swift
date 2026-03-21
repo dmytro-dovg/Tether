@@ -66,7 +66,7 @@ actor ContinuationManager<Key: Hashable> {
     private var streamContinuations: [Key: AnyStreamContinuation] = [:]
 
     // MARK: - Void continuations
-    func waitForContinuation(for key: Key, _ begin: @Sendable () -> Void) async throws {
+    func continuation(for key: Key, _ begin: @Sendable () -> Void) async throws {
         guard !continuations.keys.contains(key) else {
             throw ContinuationManagerError.continuationAlreadyExists
         }
@@ -76,7 +76,7 @@ actor ContinuationManager<Key: Hashable> {
         }
     }
 
-    func waitForContinuationWithResult<T: Sendable>(for key: Key, _ begin: @Sendable () -> Void) async throws -> T {
+    func continuationWithResult<T: Sendable>(for key: Key, _ begin: @Sendable () -> Void) async throws -> T {
         guard !continuations.keys.contains(key) else {
             throw ContinuationManagerError.continuationAlreadyExists
         }
@@ -92,7 +92,7 @@ actor ContinuationManager<Key: Hashable> {
     }
 
     // MARK: - Stream continuations
-    func waitForStream<T: Sendable>(for key: Key, _ begin: @Sendable (AsyncStream<T>.Continuation) -> Void) async throws -> AsyncStream<T> {
+    func stream<T: Sendable>(for key: Key, _ begin: @Sendable (AsyncStream<T>.Continuation) -> Void) async throws -> AsyncStream<T> {
         guard !streamContinuations.keys.contains(key) else {
             throw ContinuationManagerError.continuationAlreadyExists
         }
