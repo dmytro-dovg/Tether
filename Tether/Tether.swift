@@ -558,14 +558,13 @@ public actor TetherCentral {
     // MARK: - State
     public func stateStream() async throws -> AsyncStream<State> {
         let id = UUID()
-        let stream: AsyncStream<State> = try await cbCentralDelegate
+        let currentState = state
+        return try await cbCentralDelegate
             .continuationManager
-            .stream(for: .state(id)) { _ in
+            .stream(for: .state(id)) { continuation in
+                // Immediately yield current state
+                continuation.yield(currentState)
             }
-
-        // Immediately yield current state
-        await cbCentralDelegate.continuationManager.yield(state, for: .state(id))
-        return stream
     }
 
     public func wait(for desiredState: State) async throws {
