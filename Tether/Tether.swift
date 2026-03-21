@@ -19,15 +19,18 @@ enum TetherError: Error {
 class CentralDelegateHandler: NSObject, @unchecked Sendable {
     var logger: Logger?
     let continuationManager: ContinuationManager<Event>
+    var stateStreamContinuations: [Event: [UUID: AsyncStream<TetherCentral.State>.Continuation]]
 
     init(continuationManager: ContinuationManager<Event> = .init(), logger: Logger? = nil) {
         self.logger = logger
         self.continuationManager = continuationManager
+        self.stateStreamContinuations = [:]
     }
 }
 
 extension CentralDelegateHandler {
     enum Event: Hashable {
+        case state
         case scan
         case connect(UUID)
         case disconnect(UUID)
@@ -36,7 +39,12 @@ extension CentralDelegateHandler {
 
 extension CentralDelegateHandler: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-
+        // Capture value before Task
+        let state = TetherCentral.State.from(cbState: central.state)
+        Task {
+            let dict = stateStreamContinuations[.state]
+            dict?.keys.forEach { dict?[$0]?.yield(state) }
+        }
     }
 
 //   func centralManager(_ central: CBCentralManager, willRestoreState dict: [String : Any]) {
@@ -543,6 +551,28 @@ public actor TetherCentral {
         self.cbCentral = CBCentralManager(delegate: self.cbCentralDelegate, queue: DispatchQueue.global())
     }
 
+    // MARK: - State
+    public func stateStream() async -> AsyncStream<State> {
+        let (stream, continuation) = AsyncStream<State>.makeStream()
+        let id = UUID()
+        continuation.onTermination = { _ in
+            self.cbCentralDelegate.stateStreamContinuations[.state]?[id] = nil
+        }
+        self.cbCentralDelegate.stateStreamContinuations[.state, default: [:]][id] = continuation
+
+        // Immediately yield current state
+        continuation.yield(state)
+        return stream
+    }
+
+    public func wait(for desiredState: State) async {
+        guard desiredState != self.state else {
+            // Return immediately if at desired state
+            return
+        }
+        _ = await stateStream().first(where: { $0 == desiredState })
+    }
+
     // MARK: - Scanning
     public func scanForPeripherals(withServices services: [UUID]) async throws -> AsyncStream<Peripheral> {
         try await cbCentralDelegate
@@ -581,7 +611,7 @@ public actor TetherCentral {
 }
 
 extension TetherCentral {
-    public enum State {
+    public enum State: Sendable {
         case unknown
         case resetting
         case unsupported
