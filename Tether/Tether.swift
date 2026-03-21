@@ -19,18 +19,16 @@ enum TetherError: Error {
 class CentralDelegateHandler: NSObject, @unchecked Sendable {
     var logger: Logger?
     let continuationManager: ContinuationManager<Event>
-    var stateStreamContinuations: [Event: [UUID: AsyncStream<TetherCentral.State>.Continuation]]
 
     init(continuationManager: ContinuationManager<Event> = .init(), logger: Logger? = nil) {
         self.logger = logger
         self.continuationManager = continuationManager
-        self.stateStreamContinuations = [:]
     }
 }
 
 extension CentralDelegateHandler {
     enum Event: Hashable {
-        case state
+        case state(UUID)
         case scan
         case connect(UUID)
         case disconnect(UUID)
@@ -39,11 +37,16 @@ extension CentralDelegateHandler {
 
 extension CentralDelegateHandler: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        // Capture value before Task
         let state = TetherCentral.State.from(cbState: central.state)
         Task {
-            let dict = stateStreamContinuations[.state]
-            dict?.keys.forEach { dict?[$0]?.yield(state) }
+            await self.continuationManager.yield(state) { key in
+                switch key {
+                case .state:
+                    return true
+                default:
+                    return false
+                }
+            }
         }
     }
 
@@ -537,6 +540,7 @@ extension Peripheral: CustomDebugStringConvertible {
 public actor TetherCentral {
     private let cbCentral: CBCentralManager
     private let cbCentralDelegate: CentralDelegateHandler
+    var stateStreamContinuations: [UUID: AsyncStream<TetherCentral.State>.Continuation] = [:]
     private let logger: Logger = .init(subsystem: "sh.dovgo.tether", category: "central")
     public var state: State {
         State.from(cbState: cbCentral.state)
@@ -552,25 +556,24 @@ public actor TetherCentral {
     }
 
     // MARK: - State
-    public func stateStream() async -> AsyncStream<State> {
-        let (stream, continuation) = AsyncStream<State>.makeStream()
+    public func stateStream() async throws -> AsyncStream<State> {
         let id = UUID()
-        continuation.onTermination = { _ in
-            self.cbCentralDelegate.stateStreamContinuations[.state]?[id] = nil
-        }
-        self.cbCentralDelegate.stateStreamContinuations[.state, default: [:]][id] = continuation
+        let stream: AsyncStream<State> = try await cbCentralDelegate
+            .continuationManager
+            .stream(for: .state(id)) { _ in
+            }
 
         // Immediately yield current state
-        continuation.yield(state)
+        await cbCentralDelegate.continuationManager.yield(state, for: .state(id))
         return stream
     }
 
-    public func wait(for desiredState: State) async {
+    public func wait(for desiredState: State) async throws {
         guard desiredState != self.state else {
             // Return immediately if at desired state
             return
         }
-        _ = await stateStream().first(where: { $0 == desiredState })
+        _ = try await stateStream().first(where: { $0 == desiredState })
     }
 
     // MARK: - Scanning

@@ -112,6 +112,13 @@ actor ContinuationManager<Key: Hashable> {
         }
     }
 
+    func yield<T: Sendable>(_ value: T, body: (Key) -> Bool) {
+        let keys = streamContinuations.keys.filter { body($0) }
+        for key in keys {
+            streamContinuations[key]?.yield(value)
+        }
+    }
+
     func finish(_ key: Key) {
         if let continuation = streamContinuations.removeValue(forKey: key) {
             continuation.finish()
