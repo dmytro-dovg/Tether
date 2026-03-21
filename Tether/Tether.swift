@@ -623,17 +623,6 @@ public extension TetherCentral {
 }
 
 fileprivate extension TetherCentral.State {
-    var cbState: CBManagerState {
-        switch self {
-        case .unknown: return .unknown
-        case .resetting: return .resetting
-        case .unsupported: return .unsupported
-        case .unauthorized: return .unauthorized
-        case .poweredOff: return .poweredOff
-        case .poweredOn: return .poweredOn
-        }
-    }
-
     init(_ cbState: CBManagerState) {
         switch cbState {
         case .resetting: self = .resetting
