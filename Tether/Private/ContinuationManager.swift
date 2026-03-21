@@ -31,7 +31,7 @@ struct AnyContinuation: Sendable {
     init<T: Sendable>(_ continuation: CheckedContinuation<T, Error>) {
         _resumeWithAny = { value in
             // Safe: this closure captures CheckedContinuation<T, Error> at construction time.
-            // The only retrieval path is via ContinuationManager.continuation(for:as:) which returns
+            // The only retrieval path is via ContinuationManager.removeContinuation(for:as:) which returns
             // TypedContinuation<T> ensuring resume(returning:) can only be called with
             // a value of the same T that was used to construct this continuation.
             // swiftlint:disable force_cast
@@ -86,7 +86,7 @@ actor ContinuationManager<Key: Hashable> {
         }
     }
 
-    func continuation<T: Sendable>(for key: Key, as type: T.Type = Void.self) -> TypedContinuation<T>? {
+    func removeContinuation<T: Sendable>(for key: Key, as type: T.Type = Void.self) -> TypedContinuation<T>? {
         guard let continuation = continuations.removeValue(forKey: key) else { return nil }
         return TypedContinuation<T>(continuation)
     }
