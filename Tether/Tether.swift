@@ -39,13 +39,11 @@ extension CentralDelegateHandler: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         let state = TetherCentral.State.from(cbState: central.state)
         Task {
-            await self.continuationManager.yield(state) { key in
-                switch key {
-                case .state:
+            await self.continuationManager.yield(state) {
+                if case .state = $0 {
                     return true
-                default:
-                    return false
                 }
+                return false
             }
         }
     }
@@ -540,7 +538,6 @@ extension Peripheral: CustomDebugStringConvertible {
 public actor TetherCentral {
     private let cbCentral: CBCentralManager
     private let cbCentralDelegate: CentralDelegateHandler
-    var stateStreamContinuations: [UUID: AsyncStream<TetherCentral.State>.Continuation] = [:]
     private let logger: Logger = .init(subsystem: "sh.dovgo.tether", category: "central")
     public var state: State {
         State.from(cbState: cbCentral.state)
