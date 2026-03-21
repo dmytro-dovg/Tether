@@ -553,23 +553,26 @@ public actor TetherCentral {
     }
 
     // MARK: - State
-    public func stateStream() async throws -> AsyncStream<State> {
+    public func stateStream() async -> AsyncStream<State> {
         let id = UUID()
         let currentState = state
-        return try await cbCentralDelegate
+        // Safe: `id` practically is always unique, .continuationAlreadyExists should never happen.
+        // swiftlint:disable force_try
+        return try! await cbCentralDelegate
             .continuationManager
             .stream(for: .state(id)) { continuation in
                 // Immediately yield current state
                 continuation.yield(currentState)
             }
+        // swiftlint:enable force_try
     }
 
-    public func wait(for desiredState: State) async throws {
+    public func wait(for desiredState: State) async {
         guard desiredState != self.state else {
             // Return immediately if at desired state
             return
         }
-        _ = try await stateStream().first(where: { $0 == desiredState })
+        _ = await stateStream().first(where: { $0 == desiredState })
     }
 
     // MARK: - Scanning
