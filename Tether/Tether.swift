@@ -35,16 +35,20 @@ extension CentralDelegateHandler {
     }
 }
 
+extension CentralDelegateHandler.Event {
+    var isState: Bool {
+            if case .state = self {
+                return true
+            }
+            return false
+    }
+}
+
 extension CentralDelegateHandler: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         let state = TetherCentral.State(central.state)
         Task {
-            await self.continuationManager.yield(state) {
-                if case .state = $0 {
-                    return true
-                }
-                return false
-            }
+            await self.continuationManager.yield(state, where: \.isState)
         }
     }
 
