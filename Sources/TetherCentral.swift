@@ -36,6 +36,9 @@ public actor TetherCentral {
             .stream(for: .state(id)) { continuation in
                 // Immediately yield current state
                 continuation.yield(currentState)
+                continuation.onTermination = { _ in
+                    self.cbCentralDelegate.continuationManager.finish(.state(id))
+                }
             }
         // swiftlint:enable force_try
     }
