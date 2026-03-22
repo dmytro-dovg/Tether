@@ -7,10 +7,6 @@
 
 import Foundation
 
-enum ContinuationManagerError: Error {
-    case continuationAlreadyExists
-}
-
 struct TypedContinuation<T: Sendable>: Sendable {
     private let wrapped: AnyContinuation
 
@@ -68,7 +64,7 @@ actor ContinuationManager<Key: Hashable> {
     // MARK: - Void continuations
     func continuation(for key: Key, _ begin: @Sendable () -> Void) async throws {
         guard !continuations.keys.contains(key) else {
-            throw ContinuationManagerError.continuationAlreadyExists
+            throw TetherError.alreadyPending
         }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             continuations[key] = AnyContinuation(continuation)
@@ -78,7 +74,7 @@ actor ContinuationManager<Key: Hashable> {
 
     func continuationWithResult<T: Sendable>(for key: Key, _ begin: @Sendable () -> Void) async throws -> T {
         guard !continuations.keys.contains(key) else {
-            throw ContinuationManagerError.continuationAlreadyExists
+            throw TetherError.alreadyPending
         }
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
             continuations[key] = AnyContinuation(continuation)
@@ -94,7 +90,7 @@ actor ContinuationManager<Key: Hashable> {
     // MARK: - Stream continuations
     func stream<T: Sendable>(for key: Key, _ begin: @Sendable (AsyncStream<T>.Continuation) -> Void) async throws -> AsyncStream<T> {
         guard !streamContinuations.keys.contains(key) else {
-            throw ContinuationManagerError.continuationAlreadyExists
+            throw TetherError.alreadyPending
         }
         let (stream, continuation) = AsyncStream<T>.makeStream()
         streamContinuations[key] = AnyStreamContinuation(continuation)

@@ -29,7 +29,7 @@ public actor TetherCentral {
     public func stateStream() async -> AsyncStream<State> {
         let id = UUID()
         let currentState = state
-        // Safe: `id` practically is always unique, .continuationAlreadyExists should never happen.
+        // Safe: `id` practically is always unique, .alreadyPending should never happen.
         // swiftlint:disable force_try
         return try! await cbCentralDelegate
             .continuationManager

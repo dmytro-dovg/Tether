@@ -6,9 +6,7 @@
 //
 
 public enum TetherError: Error {
-    case alreadyScanning
-    case alreadyConnected
-    case alreadyDisconnecting
+    case alreadyPending
     case unknownError
 }
 
