@@ -1,5 +1,5 @@
 //
-//  ErrorTypes.swift
+//  Peripheral+Error.swift
 //  Tether
 //
 //  Created by Dmytro Dovgoshliubnyi on 2026-03-22.
@@ -12,6 +12,6 @@ public extension Peripheral {
         case noCharacteristic
         case noDescriptor
         case noValue
-        case characteristicWrongType
+        case wrongType
     }
 }

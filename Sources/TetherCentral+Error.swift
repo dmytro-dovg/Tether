@@ -8,6 +8,6 @@
 public extension TetherCentral {
     enum Error: Swift.Error {
         case alreadyInProgress
-        case unknownError
+        case unknown
     }
 }
