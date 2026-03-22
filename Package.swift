@@ -8,8 +8,11 @@ let package = Package(
     products: [
         .library(
             name: "Tether",
-            targets: ["Tether"]
+            targets: ["Tether"],
         ),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", from: "0.63.2"),
     ],
     targets: [
         .target(
@@ -18,6 +21,7 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ],
+            plugins: [.plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")],
         ),
         .testTarget(
             name: "TetherTests",
