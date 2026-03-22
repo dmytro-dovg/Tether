@@ -136,14 +136,12 @@ public struct Peripheral: Sendable {
                 .continuation(for: .didUpdateNotificationStateFor(characteristicUuid.cbUUID)) {
                     cbPeripheral.setNotifyValue(true, for: cbCharacteristic)
                 }
-            return try await cbPeripheralDelegate
+            return try cbPeripheralDelegate
                 .continuationManager
                 .stream(for: .notification(characteristicUuid.cbUUID)) { continuation in
                     continuation.onTermination = { _ in
                         cbPeripheral.setNotifyValue(false, for: cbCharacteristic)
-                        Task {
-                            await self.cbPeripheralDelegate.continuationManager.finish(.notification(characteristicUuid.cbUUID))
-                        }
+                        self.cbPeripheralDelegate.continuationManager.finish(.notification(characteristicUuid.cbUUID))
                     }
                 }
 

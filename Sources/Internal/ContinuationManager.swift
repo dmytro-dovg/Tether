@@ -64,29 +64,29 @@ final class ContinuationManager<Key: Hashable>: @unchecked Sendable {
 
     // MARK: - Void continuations
     func continuation(for key: Key, _ begin: @Sendable () -> Void) async throws {
-        try lock.withLock {
-            guard !continuations.keys.contains(key) else {
-                throw ContinuationManagerError.continuationExists
-            }
-        }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
-            lock.withLock {
-                continuations[key] = AnyContinuation(continuation)
+            lock.lock()
+            guard !continuations.keys.contains(key) else {
+                lock.unlock()
+                continuation.resume(throwing: ContinuationManagerError.continuationExists)
+                return
             }
+            continuations[key] = AnyContinuation(continuation)
+            lock.unlock()
             begin()
         }
     }
 
     func continuationWithResult<T: Sendable>(for key: Key, _ begin: @Sendable () -> Void) async throws -> T {
-        try lock.withLock {
-            guard !continuations.keys.contains(key) else {
-                throw ContinuationManagerError.continuationExists
-            }
-        }
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Swift.Error>) in
-            lock.withLock {
-                continuations[key] = AnyContinuation(continuation)
+            lock.lock()
+            guard !continuations.keys.contains(key) else {
+                lock.unlock()
+                continuation.resume(throwing: ContinuationManagerError.continuationExists)
+                return
             }
+            continuations[key] = AnyContinuation(continuation)
+            lock.unlock()
             begin()
         }
     }
@@ -99,14 +99,14 @@ final class ContinuationManager<Key: Hashable>: @unchecked Sendable {
     }
 
     // MARK: - Stream continuations
-    func stream<T: Sendable>(for key: Key, _ begin: @Sendable (AsyncStream<T>.Continuation) -> Void) async throws -> AsyncStream<T> {
+    func stream<T: Sendable>(for key: Key, _ begin: @Sendable (AsyncStream<T>.Continuation) -> Void) throws -> AsyncStream<T> {
+        let (stream, continuation) = AsyncStream<T>.makeStream()
         try lock.withLock {
             guard !streamContinuations.keys.contains(key) else {
                 throw ContinuationManagerError.continuationExists
             }
+            streamContinuations[key] = AnyStreamContinuation(continuation)
         }
-        let (stream, continuation) = AsyncStream<T>.makeStream()
-        lock.withLock { streamContinuations[key] = AnyStreamContinuation(continuation) }
         begin(continuation)
         return stream
     }

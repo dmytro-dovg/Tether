@@ -16,8 +16,8 @@ public actor TetherCentral {
         State(cbCentral.state)
     }
 
-    public func isScanning() async -> Bool {
-        await cbCentralDelegate.continuationManager.hasStream(for: .scan)
+    public func isScanning() -> Bool {
+        cbCentralDelegate.continuationManager.hasStream(for: .scan)
     }
 
     public init() {
@@ -26,12 +26,12 @@ public actor TetherCentral {
     }
 
     // MARK: - State
-    public func stateStream() async -> AsyncStream<State> {
+    public func stateStream() -> AsyncStream<State> {
         let id = UUID()
         let currentState = state
         // Safe: `id` practically is always unique, .alreadyPending should never happen.
         // swiftlint:disable force_try
-        return try! await cbCentralDelegate
+        return try! cbCentralDelegate
             .continuationManager
             .stream(for: .state(id)) { continuation in
                 // Immediately yield current state
@@ -49,9 +49,9 @@ public actor TetherCentral {
     }
 
     // MARK: - Scanning
-    public func scanForPeripherals(withServices services: [UUID]) async throws -> AsyncStream<Peripheral> {
+    public func scanForPeripherals(withServices services: [UUID]) throws -> AsyncStream<Peripheral> {
         do {
-            return try await cbCentralDelegate
+            return try cbCentralDelegate
                 .continuationManager
                 .stream(for: .scan) { continuation in
                     continuation.onTermination = { _ in
@@ -65,8 +65,8 @@ public actor TetherCentral {
         }
     }
 
-    public func stopScan() async {
-        await cbCentralDelegate.continuationManager.finish(.scan)
+    public func stopScan() {
+        cbCentralDelegate.continuationManager.finish(.scan)
     }
 
     // MARK: - Connection
