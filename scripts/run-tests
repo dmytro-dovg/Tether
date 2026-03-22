@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+xcodebuild -scheme Tether -destination "platform=iOS simulator,name=iPhone 17 Pro Max,OS=latest" test
