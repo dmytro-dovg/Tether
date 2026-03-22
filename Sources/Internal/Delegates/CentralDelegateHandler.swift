@@ -63,7 +63,7 @@ extension CentralDelegateHandler: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: (any Error)?) {
         Task {
-            let errorToThrow = error ?? TetherError.unknownError
+            let errorToThrow = error ?? TetherCentral.Error.unknownError
             logger?.warning("Failed to connect: \(peripheral.name ?? "Unknown peripheral")\nError: \(errorToThrow.localizedDescription)")
             await continuationManager.removeContinuation(for: .connect(peripheral.identifier))?.resume(throwing: errorToThrow)
         }

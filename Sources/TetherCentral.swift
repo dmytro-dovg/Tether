@@ -50,17 +50,21 @@ public actor TetherCentral {
 
     // MARK: - Scanning
     public func scanForPeripherals(withServices services: [UUID]) async throws -> AsyncStream<Peripheral> {
-        try await cbCentralDelegate
-            .continuationManager
-            .stream(for: .scan) { continuation in
-                continuation.onTermination = { _ in
-                    self.cbCentral.stopScan()
-                    Task {
-                        await self.cbCentralDelegate.continuationManager.finish(.scan)
+        do {
+            return try await cbCentralDelegate
+                .continuationManager
+                .stream(for: .scan) { continuation in
+                    continuation.onTermination = { _ in
+                        self.cbCentral.stopScan()
+                        Task {
+                            await self.cbCentralDelegate.continuationManager.finish(.scan)
+                        }
                     }
+                    self.cbCentral.scanForPeripherals(withServices: services.cbUUIDs)
                 }
-                self.cbCentral.scanForPeripherals(withServices: services.cbUUIDs)
-            }
+        } catch ContinuationManagerError.continuationExists {
+            throw Error.alreadyInProgress
+        }
     }
 
     public func stopScan() async {
@@ -69,19 +73,27 @@ public actor TetherCentral {
 
     // MARK: - Connection
     public func connect(to peripheral: Peripheral) async throws {
-        try await cbCentralDelegate
-            .continuationManager
-            .continuation(for: .connect(peripheral.identifier)) {
-                self.cbCentral.connect(peripheral.cbPeripheral, options: nil)
-            }
+        do {
+            try await cbCentralDelegate
+                .continuationManager
+                .continuation(for: .connect(peripheral.identifier)) {
+                    self.cbCentral.connect(peripheral.cbPeripheral, options: nil)
+                }
+        } catch ContinuationManagerError.continuationExists {
+            throw Error.alreadyInProgress
+        }
     }
 
     public func disconnect(from peripheral: Peripheral) async throws {
-        try await cbCentralDelegate
-            .continuationManager
-            .continuation(for: .disconnect(peripheral.identifier)) {
-                self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
-            }
+        do {
+            try await cbCentralDelegate
+                .continuationManager
+                .continuation(for: .disconnect(peripheral.identifier)) {
+                    self.cbCentral.cancelPeripheralConnection(peripheral.cbPeripheral)
+                }
+        } catch ContinuationManagerError.continuationExists {
+            throw Error.alreadyInProgress
+        }
     }
 }
 

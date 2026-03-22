@@ -105,7 +105,7 @@ extension PeripheralDelegateHandler: CBPeripheralDelegate {
                     return
                 }
                 guard let data else {
-                    readContinuation.resume(throwing: PeripheralError.noValue)
+                    readContinuation.resume(throwing: Peripheral.Error.noValue)
                     return
                 }
                 logger?.debug("Peripheral \(peripheral.identifier) did read value of characteristics \(characteristic.uuid)")
