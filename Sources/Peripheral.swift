@@ -103,7 +103,7 @@ public struct Peripheral: Sendable {
     public func writeValue(_ value: Data, for characteristicUuid: UUID) async throws {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         guard cbCharacteristic.properties.contains(.write) else {
-            throw Error.characteristicWrongType
+            throw Error.wrongType
         }
         do {
             try await cbPeripheralDelegate
@@ -120,7 +120,7 @@ public struct Peripheral: Sendable {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
 
         guard cbCharacteristic.properties.contains(.writeWithoutResponse) else {
-            throw Error.characteristicWrongType
+            throw Error.wrongType
         }
         cbPeripheral.writeValue(value, for: cbCharacteristic, type: .withoutResponse)
     }
@@ -129,7 +129,7 @@ public struct Peripheral: Sendable {
         let cbCharacteristic = try characteristic(for: characteristicUuid)
         guard cbCharacteristic.properties.contains(.notify) ||
                 cbCharacteristic.properties.contains(.indicate) else {
-            throw Error.characteristicWrongType
+            throw Error.wrongType
         }
         do {
             try await cbPeripheralDelegate.continuationManager
