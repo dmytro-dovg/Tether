@@ -5,14 +5,14 @@
 //  Created by Dmytro Dovgoshliubnyi on 2026-03-22.
 //
 
-enum TetherError: Error {
+public enum TetherError: Error {
     case alreadyScanning
     case alreadyConnected
     case alreadyDisconnecting
     case unknownError
 }
 
-enum PeripheralError: Error {
+public enum PeripheralError: Error {
     case noService
     case noCharacteristic
     case noDescriptor
