@@ -56,9 +56,7 @@ public actor TetherCentral {
                 .stream(for: .scan) { continuation in
                     continuation.onTermination = { _ in
                         self.cbCentral.stopScan()
-                        Task {
-                            await self.cbCentralDelegate.continuationManager.finish(.scan)
-                        }
+                        self.cbCentralDelegate.continuationManager.finish(.scan)
                     }
                     self.cbCentral.scanForPeripherals(withServices: services.cbUUIDs)
                 }

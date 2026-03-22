@@ -57,68 +57,84 @@ struct AnyStreamContinuation: Sendable {
     func finish() { _finish() }
 }
 
-actor ContinuationManager<Key: Hashable> {
+final class ContinuationManager<Key: Hashable>: @unchecked Sendable {
+    private let lock = NSLock()
     private var continuations: [Key: AnyContinuation] = [:]
     private var streamContinuations: [Key: AnyStreamContinuation] = [:]
 
     // MARK: - Void continuations
     func continuation(for key: Key, _ begin: @Sendable () -> Void) async throws {
-        guard !continuations.keys.contains(key) else {
-            throw ContinuationManagerError.continuationExists
+        try lock.withLock {
+            guard !continuations.keys.contains(key) else {
+                throw ContinuationManagerError.continuationExists
+            }
         }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
-            continuations[key] = AnyContinuation(continuation)
+            lock.withLock {
+                continuations[key] = AnyContinuation(continuation)
+            }
             begin()
         }
     }
 
     func continuationWithResult<T: Sendable>(for key: Key, _ begin: @Sendable () -> Void) async throws -> T {
-        guard !continuations.keys.contains(key) else {
-            throw ContinuationManagerError.continuationExists
+        try lock.withLock {
+            guard !continuations.keys.contains(key) else {
+                throw ContinuationManagerError.continuationExists
+            }
         }
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Swift.Error>) in
-            continuations[key] = AnyContinuation(continuation)
+            lock.withLock {
+                continuations[key] = AnyContinuation(continuation)
+            }
             begin()
         }
     }
 
     func removeContinuation<T: Sendable>(for key: Key, as type: T.Type = Void.self) -> TypedContinuation<T>? {
-        guard let continuation = continuations.removeValue(forKey: key) else { return nil }
-        return TypedContinuation<T>(continuation)
+        return lock.withLock {
+            guard let continuation = continuations.removeValue(forKey: key) else { return nil }
+            return TypedContinuation<T>(continuation)
+        }
     }
 
     // MARK: - Stream continuations
     func stream<T: Sendable>(for key: Key, _ begin: @Sendable (AsyncStream<T>.Continuation) -> Void) async throws -> AsyncStream<T> {
-        guard !streamContinuations.keys.contains(key) else {
-            throw ContinuationManagerError.continuationExists
+        try lock.withLock {
+            guard !streamContinuations.keys.contains(key) else {
+                throw ContinuationManagerError.continuationExists
+            }
         }
         let (stream, continuation) = AsyncStream<T>.makeStream()
-        streamContinuations[key] = AnyStreamContinuation(continuation)
+        lock.withLock { streamContinuations[key] = AnyStreamContinuation(continuation) }
         begin(continuation)
         return stream
     }
 
     func hasStream(for key: Key) -> Bool {
-        streamContinuations.keys.contains(key)
-    }
-
-    func yield<T: Sendable>(_ value: T, for key: Key) {
-        if let continuation = streamContinuations[key] {
-            continuation.yield(value)
+        lock.withLock {
+            streamContinuations.keys.contains(key)
         }
     }
 
-    func yield<T: Sendable>(_ value: T, where predicate: (Key) -> Bool) {
-        let keys = streamContinuations.keys.filter { predicate($0) }
-        for key in keys {
+    func yield<T: Sendable>(_ value: T, for key: Key) {
+        lock.withLock {
             streamContinuations[key]?.yield(value)
         }
     }
 
-    func finish(_ key: Key) {
-        if let continuation = streamContinuations.removeValue(forKey: key) {
-            continuation.finish()
+    func yield<T: Sendable>(_ value: T, where predicate: (Key) -> Bool) {
+        lock.withLock {
+            let keys = streamContinuations.keys.filter { predicate($0) }
+            for key in keys {
+                streamContinuations[key]?.yield(value)
+            }
         }
+    }
 
+    func finish(_ key: Key) {
+        lock.withLock {
+            streamContinuations.removeValue(forKey: key)?.finish()
+        }
     }
 }
