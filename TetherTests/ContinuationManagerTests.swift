@@ -33,7 +33,7 @@ struct ContinuationManagerTests {
 
         await withCheckedContinuation { signal in
             Task {
-                let _: String? = try? await manager.continuationWithResult(for: testKey) {
+                try? await manager.continuationWithResult(for: testKey) {
                     signal.resume()
                 }
             }
