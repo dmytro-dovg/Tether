@@ -10,7 +10,7 @@ import Foundation
 struct TypedContinuation<T: Sendable>: Sendable {
     private let wrapped: AnyContinuation
 
-    init(_ wrapped: AnyContinuation) { self.wrapped = wrapped }
+    fileprivate init(_ wrapped: AnyContinuation) { self.wrapped = wrapped }
 
     func resume(returning value: T) { wrapped.resume(returning: value) }
     func resume(throwing error: Error) { wrapped.resume(throwing: error) }
@@ -20,7 +20,7 @@ extension TypedContinuation where T == Void {
     func resume() { wrapped.resume() }
 }
 
-struct AnyContinuation: Sendable {
+private struct AnyContinuation: Sendable {
     private let _resumeWithAny: @Sendable (Any) -> Void
     private let _resumeWithError: @Sendable (Error) -> Void
 
