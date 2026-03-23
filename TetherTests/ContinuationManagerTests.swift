@@ -137,7 +137,7 @@ struct ContinuationManagerTests {
         }
     }
 
-    @Test func streamWhereYieldAndFinish() async throws {
+    @Test func streamYieldWithPredicateAndFinish() async throws {
         let prefix = "testPrefix_"
         let testKey = "\(prefix)key"
         let testKey2 = "\(prefix)key2"
