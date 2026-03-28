@@ -19,7 +19,8 @@ let package = Package(
             name: "Tether",
             path: "Sources",
             swiftSettings: [
-                .swiftLanguageMode(.v6)
+                .swiftLanguageMode(.v6),
+                .enableUpcomingFeature("StrictConcurrency"),
             ],
             plugins: [.plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")],
         ),

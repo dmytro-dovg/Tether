@@ -96,6 +96,20 @@ public actor TetherCentral {
             throw Error.alreadyInProgress
         }
     }
+
+    public func disconnectStream() -> AsyncStream<(UUID, (any Swift.Error)?)> {
+        let id = UUID()
+        // Safe: `id` practically is always unique, .alreadyPending should never happen.
+        // swiftlint:disable force_try
+        return try! cbCentralDelegate
+            .continuationManager
+            .stream(for: .disconnects(id)) { continuation in
+                continuation.onTermination = { _ in
+                    self.cbCentralDelegate.continuationManager.finish(.disconnects(id))
+                }
+            }
+        // swiftlint:enable force_try
+    }
 }
 
 public extension TetherCentral {

@@ -24,12 +24,20 @@ extension CentralDelegateHandler {
         case scan
         case connect(UUID)
         case disconnect(UUID)
+        case disconnects(UUID)
     }
 }
 
 extension CentralDelegateHandler.Event {
     var isState: Bool {
         if case .state = self {
+            return true
+        }
+        return false
+    }
+
+    var isDisconnects: Bool {
+        if case .disconnects = self {
             return true
         }
         return false
@@ -62,22 +70,42 @@ extension CentralDelegateHandler: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
-        if let error {
-            logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
-            continuationManager.removeContinuation(for: .disconnect(peripheral.identifier))?.resume(throwing: error)
-            return
+        let continuation = continuationManager.removeContinuation(for: .disconnect(peripheral.identifier))
+
+        if let continuation {
+            if let error {
+                logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
+                continuation.resume(throwing: error)
+                return
+            }
+            logger?.debug("Disconnected: \(peripheral.name ?? "Unknown peripheral")")
+            continuation.resume()
+        } else {
+            logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error?.localizedDescription ?? "-")")
+            continuationManager.yield(
+                (peripheral.identifier, error),
+                where: \.isDisconnects
+            )
         }
-        logger?.debug("Disconnected: \(peripheral.name ?? "Unknown peripheral")")
-        continuationManager.removeContinuation(for: .disconnect(peripheral.identifier))?.resume()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, timestamp: CFAbsoluteTime, isReconnecting: Bool, error: (any Error)?) {
-        if let error {
-            logger?.warning("Disconnected(2) with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
-            continuationManager.removeContinuation(for: .disconnect(peripheral.identifier))?.resume(throwing: error)
-            return
+        let continuation = continuationManager.removeContinuation(for: .disconnect(peripheral.identifier))
+
+        if let continuation {
+            if let error {
+                logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error.localizedDescription)")
+                continuation.resume(throwing: error)
+                return
+            }
+            logger?.debug("Disconnected: \(peripheral.name ?? "Unknown peripheral")")
+            continuation.resume()
+        } else {
+            logger?.warning("Disconnected with error: \(peripheral.name ?? "Unknown peripheral")\nError: \(error?.localizedDescription ?? "-")")
+            continuationManager.yield(
+                (peripheral.identifier, error),
+                where: \.isDisconnects
+            )
         }
-        logger?.debug("Disconnected(2): \(peripheral.name ?? "Unknown peripheral")")
-        continuationManager.removeContinuation(for: .disconnect(peripheral.identifier))?.resume()
     }
 }
